@@ -12,6 +12,7 @@ RESOURCES_DIR = PROJECT_ROOT / "resources"
 SCREENSHOTS_DIR = RESOURCES_DIR / "screenshots"
 ROWS_DIR = RESOURCES_DIR / "rows"
 MATCH_THRESHOLD = 70
+POINTS_BY_POSITION = (15, 12, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1)
 
 PLAYERS = [
     "RK AxeeL",
@@ -39,6 +40,7 @@ class FuzzyMatch:
 @dataclass(frozen=True)
 class ScoreboardRowResult:
     row_number: int
+    points: int
     ocr_text: str
     normalized_text: str
     matched_player: str
@@ -106,6 +108,12 @@ def prepare_scoreboard_rows(screenshot_path, output_dir=ROWS_DIR):
 
 def normalize_text(text):
     return text.lower().replace(".", "").replace(" ", "")
+
+
+def points_for_position(position, points_by_position=POINTS_BY_POSITION):
+    if position < 1 or position > len(points_by_position):
+        raise ValueError(f"Position {position} has no configured points")
+    return points_by_position[position - 1]
 
 
 def _normalized_players(players):
@@ -218,6 +226,7 @@ def build_scoreboard_results(ocr_results, players=PLAYERS):
     return [
         ScoreboardRowResult(
             row_number=row_number,
+            points=points_for_position(row_number),
             ocr_text=ocr_text,
             normalized_text=normalized_text,
             matched_player=assignments[row_number].player_name,

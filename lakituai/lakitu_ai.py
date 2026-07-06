@@ -12,7 +12,8 @@ def main():
     for row in scoreboard_rows:
         print(
             f"ROW {row.row_number}: {row.ocr_text} -> {row.normalized_text} -> "
-            f"{row.matched_player} || SCORE: {row.match_score} ({row.match_source})"
+            f"{row.matched_player} || POINTS: {row.points} || "
+            f"MATCH: {row.match_score} ({row.match_source})"
         )
 
 
