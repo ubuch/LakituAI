@@ -1,7 +1,11 @@
+"""Command-line entry point for processing the sample scoreboard screenshot."""
+
 from lakituai import logic, ocr
 
 
 def main():
+    """Run the current single-image OCR and scoring pipeline."""
+
     path = logic.SCREENSHOTS_DIR / "screenshot1.jpg"
     row_paths = logic.prepare_scoreboard_rows(path)
 

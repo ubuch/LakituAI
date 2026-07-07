@@ -1,3 +1,5 @@
+"""Core image processing, matching, scoring, and standings logic for LakituAI."""
+
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -107,6 +109,8 @@ PLAYERS = [
 
 @dataclass(frozen=True)
 class FuzzyMatch:
+    """Best player candidate found for one OCR reading."""
+
     player_name: str
     score: float
     source: str
@@ -114,6 +118,8 @@ class FuzzyMatch:
 
 @dataclass(frozen=True)
 class ScoreboardRowResult:
+    """Structured result for a single scoreboard position."""
+
     row_number: int
     points: int
     ocr_text: str
@@ -128,6 +134,8 @@ class ScoreboardRowResult:
 
 @dataclass
 class TournamentStandings:
+    """Accumulated points across one or more races."""
+
     player_points: dict[str, int] = field(default_factory=dict)
     team_points: dict[str, int] = field(default_factory=dict)
     races_played: int = 0
@@ -146,6 +154,8 @@ def _save_img(img, path):
 
 
 def upscale_img(path):
+    """Crop the scoreboard from a screenshot and upscale it for OCR."""
+
     img = _get_image(path)
 
     h, w = img.shape[:2]
@@ -164,10 +174,14 @@ def upscale_img(path):
 
 
 def convert_to_grayscale(img):
+    """Convert an OpenCV BGR image to grayscale."""
+
     return cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
 
 
 def cut_scoreboard_rows(img, output_dir=ROWS_DIR, number_of_rows=NUMBER_OF_ROWS):
+    """Split the scoreboard image into one image file per player row."""
+
     img_height = img.shape[0]
     row_height = img_height // number_of_rows
     row_paths = []
@@ -186,22 +200,30 @@ def cut_scoreboard_rows(img, output_dir=ROWS_DIR, number_of_rows=NUMBER_OF_ROWS)
 
 
 def prepare_scoreboard_rows(screenshot_path, output_dir=ROWS_DIR):
+    """Create OCR-ready row images from a full-screen race screenshot."""
+
     image = upscale_img(screenshot_path)
     image_gray = convert_to_grayscale(image)
     return cut_scoreboard_rows(image_gray, output_dir)
 
 
 def normalize_text(text):
+    """Normalize OCR/player text for fuzzy matching."""
+
     return text.lower().replace(".", "").replace(" ", "")
 
 
 def points_for_position(position, points_by_position=POINTS_BY_POSITION):
+    """Return the race points awarded to a finishing position."""
+
     if position < 1 or position > len(points_by_position):
         raise ValueError(f"Position {position} has no configured points")
     return points_by_position[position - 1]
 
 
 def extract_team_tag(player_name, team_tags=TEAM_TAGS):
+    """Extract a team tag when it appears at the start or end of a player name."""
+
     normalized_player = normalize_text(player_name)
     sorted_tags = sorted(team_tags, key=lambda tag: len(normalize_text(tag)), reverse=True)
 
@@ -216,6 +238,8 @@ def extract_team_tag(player_name, team_tags=TEAM_TAGS):
 
 
 def validate_player_tags(players=PLAYERS, team_tags=TEAM_TAGS):
+    """Ensure every configured player has a recognizable team tag."""
+
     players_without_team = [
         player for player in players if extract_team_tag(player, team_tags) is None
     ]
@@ -227,6 +251,8 @@ def validate_player_tags(players=PLAYERS, team_tags=TEAM_TAGS):
 
 
 def is_bot_name(normalized_name, bot_names=BOT_NAMES):
+    """Return whether a normalized OCR reading looks like a playable character."""
+
     normalized_bot_names = [normalize_text(bot_name) for bot_name in bot_names]
     if normalized_name in normalized_bot_names:
         return True
@@ -280,6 +306,8 @@ def fuzzy_match(
     threshold=MATCH_THRESHOLD,
     excluded_players=None,
 ):
+    """Match one normalized OCR reading to the best available player."""
+
     excluded_players = set(excluded_players or ())
     best_match = _best_player_match(normalized_name, players, excluded_players)
 
@@ -294,6 +322,8 @@ def fuzzy_match(
 
 
 def _resolve_unique_matches(normalized_rows, players):
+    """Assign player names to rows while preventing duplicate players."""
+
     assignments = {}
     assigned_players = {}
     excluded_by_row = {row_number: set() for row_number, _ in normalized_rows}
@@ -336,6 +366,12 @@ def _resolve_unique_matches(normalized_rows, players):
 
 
 def build_scoreboard_results(ocr_results, players=PLAYERS):
+    """Build structured race rows from OCR output.
+
+    Bots are replaced by the missing player and rows absent from OCR are added as
+    missing-player rows, so point totals can still be calculated.
+    """
+
     ocr_rows = [
         (row_number, ocr_text, normalize_text(ocr_text))
         for row_number, ocr_text in ocr_results
@@ -410,6 +446,8 @@ def build_scoreboard_results(ocr_results, players=PLAYERS):
 
 
 def build_player_points(scoreboard_rows):
+    """Sum race points by player."""
+
     points_by_player = {}
     for row in scoreboard_rows:
         if not row.points_recipient:
@@ -421,6 +459,8 @@ def build_player_points(scoreboard_rows):
 
 
 def build_team_points(scoreboard_rows, team_tags=TEAM_TAGS):
+    """Sum race points by team tag."""
+
     points_by_team = {}
     for row in scoreboard_rows:
         if not row.points_recipient:
@@ -441,6 +481,8 @@ def add_race_to_standings(
     players=PLAYERS,
     team_tags=TEAM_TAGS,
 ):
+    """Add one race result to cumulative tournament standings."""
+
     validate_player_tags(players, team_tags)
 
     if standings is None:
