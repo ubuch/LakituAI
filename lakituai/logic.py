@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 import cv2
@@ -13,7 +13,80 @@ SCREENSHOTS_DIR = RESOURCES_DIR / "screenshots"
 ROWS_DIR = RESOURCES_DIR / "rows"
 MATCH_THRESHOLD = 70
 POINTS_BY_POSITION = (15, 12, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1)
-BOT_NAMES = ("Mario", "Luigi", "Baby Peach")
+TEAM_TAGS = ("RK", "ne")
+BOT_NAMES = (
+    "Mario",
+    "Luigi",
+    "Peach",
+    "Bowser",
+    "Yoshi",
+    "Toad",
+    "Daisy",
+    "Rosalina",
+    "Estela",
+    "Donkey Kong",
+    "Wario",
+    "Koopa",
+    "Pauline",
+    "Waluigi",
+    "Toadette",
+    "Baby Mario",
+    "Baby Luigi",
+    "Baby Peach",
+    "Baby Daisy",
+    "Baby Rosalina",
+    "Baby Estela",
+    "Bowser Jr",
+    "Lakitu",
+    "King Boo",
+    "Shy Guy",
+    "Birdo",
+    "Dry Bones",
+    "Huesitos",
+    "Wiggler",
+    "Floruga",
+    "Hammer Bro",
+    "Hermano Martillo",
+    "Chargin' Chuck",
+    "Placapum",
+    "Nabbit",
+    "Caco Gazapo",
+    "Monty Mole",
+    "Topo Monty",
+    "Goomba",
+    "Piranha Plant",
+    "Planta Piraña",
+    "Pianta",
+    "Spike",
+    "Escupico",
+    "Cow",
+    "Moo Moo",
+    "Pokey",
+    "Swoop",
+    "Biddybud",
+    "Para-Biddybud",
+    "Biddybud alado",
+    "Penguin",
+    "Pingüino",
+    "Sidestepper",
+    "Snowman",
+    "Hombre de Nieve",
+    "Cataquack",
+    "Catacuac",
+    "Fish Bone",
+    "Fishbone",
+    "Dolphin",
+    "Delfín",
+    "Peepa",
+    "Bat",
+    "Murciélago",
+    "Stingby",
+    "Abejorro",
+    "Rocky Wrench",
+    "Coin Coffer",
+    "Cheep Cheep",
+    "Conkdor",
+)
 BOT_MATCH_THRESHOLD = 90
 
 PLAYERS = [
@@ -51,6 +124,13 @@ class ScoreboardRowResult:
     match_source: str
     is_bot: bool = False
     is_missing_player: bool = False
+
+
+@dataclass
+class TournamentStandings:
+    player_points: dict[str, int] = field(default_factory=dict)
+    team_points: dict[str, int] = field(default_factory=dict)
+    races_played: int = 0
 
 
 def _get_image(path):
@@ -121,11 +201,38 @@ def points_for_position(position, points_by_position=POINTS_BY_POSITION):
     return points_by_position[position - 1]
 
 
+def extract_team_tag(player_name, team_tags=TEAM_TAGS):
+    normalized_player = normalize_text(player_name)
+    sorted_tags = sorted(team_tags, key=lambda tag: len(normalize_text(tag)), reverse=True)
+
+    for team_tag in sorted_tags:
+        normalized_tag = normalize_text(team_tag)
+        if normalized_player.startswith(normalized_tag):
+            return team_tag
+        if normalized_player.endswith(normalized_tag):
+            return team_tag
+
+    return None
+
+
+def validate_player_tags(players=PLAYERS, team_tags=TEAM_TAGS):
+    players_without_team = [
+        player for player in players if extract_team_tag(player, team_tags) is None
+    ]
+    if players_without_team:
+        raise ValueError(
+            "Players without team tag at the start or end: "
+            + ", ".join(players_without_team)
+        )
+
+
 def is_bot_name(normalized_name, bot_names=BOT_NAMES):
     normalized_bot_names = [normalize_text(bot_name) for bot_name in bot_names]
     if normalized_name in normalized_bot_names:
         return True
-    if len(normalized_name) < 3:
+
+    shortest_bot_name = min(len(bot_name) for bot_name in normalized_bot_names)
+    if len(normalized_name) < shortest_bot_name:
         return False
 
     match = process.extractOne(normalized_name, normalized_bot_names, scorer=fuzz.WRatio)
@@ -311,3 +418,39 @@ def build_player_points(scoreboard_rows):
             points_by_player.get(row.points_recipient, 0) + row.points
         )
     return points_by_player
+
+
+def build_team_points(scoreboard_rows, team_tags=TEAM_TAGS):
+    points_by_team = {}
+    for row in scoreboard_rows:
+        if not row.points_recipient:
+            continue
+
+        team_tag = extract_team_tag(row.points_recipient, team_tags)
+        if team_tag is None:
+            raise ValueError(f"Could not find team tag for {row.points_recipient}")
+
+        points_by_team[team_tag] = points_by_team.get(team_tag, 0) + row.points
+
+    return points_by_team
+
+
+def add_race_to_standings(
+    scoreboard_rows,
+    standings=None,
+    players=PLAYERS,
+    team_tags=TEAM_TAGS,
+):
+    validate_player_tags(players, team_tags)
+
+    if standings is None:
+        standings = TournamentStandings()
+
+    for player, points in build_player_points(scoreboard_rows).items():
+        standings.player_points[player] = standings.player_points.get(player, 0) + points
+
+    for team, points in build_team_points(scoreboard_rows, team_tags).items():
+        standings.team_points[team] = standings.team_points.get(team, 0) + points
+
+    standings.races_played += 1
+    return standings

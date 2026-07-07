@@ -18,7 +18,9 @@ def main():
             f"MATCH: {row.match_score} ({row.match_source})"
         )
 
-    print(logic.build_player_points(scoreboard_rows))
+    standings = logic.add_race_to_standings(scoreboard_rows)
+    print(f"PLAYER POINTS: {standings.player_points}")
+    print(f"TEAM POINTS: {standings.team_points}")
 
 
 if __name__ == "__main__":
