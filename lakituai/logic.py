@@ -13,6 +13,8 @@ SCREENSHOTS_DIR = RESOURCES_DIR / "screenshots"
 ROWS_DIR = RESOURCES_DIR / "rows"
 MATCH_THRESHOLD = 70
 POINTS_BY_POSITION = (15, 12, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1)
+BOT_NAMES = ("Mario", "Luigi", "Baby Peach")
+BOT_MATCH_THRESHOLD = 90
 
 PLAYERS = [
     "RK AxeeL",
@@ -44,8 +46,11 @@ class ScoreboardRowResult:
     ocr_text: str
     normalized_text: str
     matched_player: str
+    points_recipient: str
     match_score: float
     match_source: str
+    is_bot: bool = False
+    is_missing_player: bool = False
 
 
 def _get_image(path):
@@ -114,6 +119,17 @@ def points_for_position(position, points_by_position=POINTS_BY_POSITION):
     if position < 1 or position > len(points_by_position):
         raise ValueError(f"Position {position} has no configured points")
     return points_by_position[position - 1]
+
+
+def is_bot_name(normalized_name, bot_names=BOT_NAMES):
+    normalized_bot_names = [normalize_text(bot_name) for bot_name in bot_names]
+    if normalized_name in normalized_bot_names:
+        return True
+    if len(normalized_name) < 3:
+        return False
+
+    match = process.extractOne(normalized_name, normalized_bot_names, scorer=fuzz.WRatio)
+    return match is not None and match[1] >= BOT_MATCH_THRESHOLD
 
 
 def _normalized_players(players):
@@ -220,18 +236,78 @@ def build_scoreboard_results(ocr_results, players=PLAYERS):
     normalized_rows = [
         (row_number, normalized_text)
         for row_number, _, normalized_text in ocr_rows
+        if not is_bot_name(normalized_text)
     ]
     assignments = _resolve_unique_matches(normalized_rows, players)
+    used_players = {
+        match.player_name for match in assignments.values() if match.player_name
+    }
+    missing_players = [player for player in players if player not in used_players]
 
-    return [
-        ScoreboardRowResult(
-            row_number=row_number,
-            points=points_for_position(row_number),
-            ocr_text=ocr_text,
-            normalized_text=normalized_text,
-            matched_player=assignments[row_number].player_name,
-            match_score=assignments[row_number].score,
-            match_source=assignments[row_number].source,
+    scoreboard_rows = []
+    for row_number, ocr_text, normalized_text in ocr_rows:
+        row_points = points_for_position(row_number)
+        if is_bot_name(normalized_text):
+            points_recipient = missing_players.pop(0) if missing_players else ""
+            scoreboard_rows.append(
+                ScoreboardRowResult(
+                    row_number=row_number,
+                    points=row_points,
+                    ocr_text=ocr_text,
+                    normalized_text=normalized_text,
+                    matched_player=points_recipient,
+                    points_recipient=points_recipient,
+                    match_score=100,
+                    match_source="bot_replacement",
+                    is_bot=True,
+                )
+            )
+            continue
+
+        match = assignments[row_number]
+        scoreboard_rows.append(
+            ScoreboardRowResult(
+                row_number=row_number,
+                points=row_points,
+                ocr_text=ocr_text,
+                normalized_text=normalized_text,
+                matched_player=match.player_name,
+                points_recipient=match.player_name,
+                match_score=match.score,
+                match_source=match.source,
+            )
         )
-        for row_number, ocr_text, normalized_text in ocr_rows
+
+    used_positions = {row_number for row_number, _, _ in ocr_rows}
+    missing_positions = [
+        position
+        for position in range(1, len(POINTS_BY_POSITION) + 1)
+        if position not in used_positions
     ]
+    for position, player in zip(missing_positions, missing_players):
+        scoreboard_rows.append(
+            ScoreboardRowResult(
+                row_number=position,
+                points=points_for_position(position),
+                ocr_text="",
+                normalized_text="",
+                matched_player=player,
+                points_recipient=player,
+                match_score=0,
+                match_source="missing_player",
+                is_missing_player=True,
+            )
+        )
+
+    return sorted(scoreboard_rows, key=lambda row: row.row_number)
+
+
+def build_player_points(scoreboard_rows):
+    points_by_player = {}
+    for row in scoreboard_rows:
+        if not row.points_recipient:
+            continue
+        points_by_player[row.points_recipient] = (
+            points_by_player.get(row.points_recipient, 0) + row.points
+        )
+    return points_by_player
