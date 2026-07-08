@@ -1,0 +1,89 @@
+"""
+LakituAI CLI Usage Examples
+
+Before running: Make sure you have activated the virtual environment
+and installed dependencies (see SETUP.md)
+
+=== BASIC USAGE ===
+
+Process a screenshot:
+  python -m lakituai /path/to/screenshot.jpg
+
+Process with relative path:
+  python -m lakituai resources/screenshots/screenshot1.jpg
+
+=== HELP ===
+
+View help message:
+  python -m lakituai -h
+  python -m lakituai --help
+
+=== ERROR HANDLING ===
+
+File not found:
+  $ python -m lakituai nonexistent.jpg
+  ERROR: Image file not found: nonexistent.jpg
+
+Invalid format:
+  $ python -m lakituai image.txt
+  ERROR: Unsupported image format: .txt
+
+Directory instead of file:
+  $ python -m lakituai /some/directory/
+  ERROR: Path is not a file: /some/directory/
+
+=== SUPPORTED IMAGE FORMATS ===
+
+.jpg   - JPEG image format
+.jpeg  - JPEG (alternative extension)
+.png   - PNG image format
+.bmp   - Bitmap image format
+.gif   - GIF image format
+.webp  - WebP image format
+
+=== OUTPUT ===
+
+The CLI will output:
+1. Processing status (which file is being processed)
+2. Detailed scoreboard results:
+   - Row number
+   - Row type (PLAYER, BOT, or MISSING)
+   - OCR-detected text
+   - Normalized text
+   - Matched player name
+   - Points awarded
+   - Match confidence score
+   - Match source (players, previous_ocr, bot_replacement, etc.)
+3. Tournament standings:
+   - Player points
+   - Team points
+   - Number of races processed
+
+=== EXAMPLE OUTPUT ===
+
+Processing image: /home/user/races/race1.jpg
+--------------------------------------------------------------------------------
+Extracted 12 scoreboard rows
+
+SCOREBOARD RESULTS:
+--------------------------------------------------------------------------------
+ROW  1 [PLAYER ]: RK AxeeL          -> rkaxeel              -> RK AxeeL       || POINTS:  15 TO: RK AxeeL         || MATCH:  95.0 (players)
+ROW  2 [PLAYER ]: ne.ths            -> neths                -> ne.ths         || POINTS:  12 TO: ne.ths           || MATCH:  92.0 (players)
+ROW  3 [PLAYER ]: RK ivanchu        -> rkivanchu            -> RK ivanchu     || POINTS:  10 TO: RK ivanchu       || MATCH:  90.0 (players)
+...
+================================================================================
+TOURNAMENT STANDINGS
+================================================================================
+
+PLAYER POINTS:
+  RK AxeeL            :  15
+  ne.ths              :  12
+  RK ivanchu          :  10
+  ...
+
+TEAM POINTS:
+  RK                  :  75
+  ne                  :  78
+
+Races played: 1
+"""

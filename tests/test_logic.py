@@ -1,6 +1,8 @@
 import unittest
+import tempfile
+from pathlib import Path
 
-from lakituai import logic
+from lakituai import logic, config, player_management
 
 
 class LogicTests(unittest.TestCase):
@@ -98,6 +100,152 @@ class LogicTests(unittest.TestCase):
             "ne": 22,
         })
         self.assertEqual(standings.races_played, 2)
+
+
+class ConfigTests(unittest.TestCase):
+    def setUp(self):
+        """Create temporary directories for config files."""
+        self.temp_dir = tempfile.TemporaryDirectory()
+        self.temp_path = Path(self.temp_dir.name)
+
+    def tearDown(self):
+        """Clean up temporary directories."""
+        self.temp_dir.cleanup()
+
+    def test_load_config_returns_defaults_when_files_dont_exist(self):
+        """Loading from non-existent paths should return default configuration."""
+        cfg = config.load_config(
+            self.temp_path / "missing_bots.json",
+            self.temp_path / "missing_players.json",
+        )
+
+        self.assertEqual(cfg.bots, config.DEFAULT_BOTS)
+        self.assertEqual(cfg.players, config.DEFAULT_PLAYERS)
+
+    def test_save_and_load_config_preserves_data(self):
+        """Saving and loading should preserve configuration."""
+        bots_path = self.temp_path / "bots.json"
+        players_path = self.temp_path / "players.json"
+
+        original_cfg = config.GameConfig(
+            bots=["Mario", "Luigi"],
+            players=["RK Player1", "ne.Player2"],
+        )
+        config.save_config(original_cfg, bots_path, players_path)
+
+        loaded_cfg = config.load_config(bots_path, players_path)
+
+        self.assertEqual(loaded_cfg.bots, ["Mario", "Luigi"])
+        self.assertEqual(loaded_cfg.players, ["RK Player1", "ne.Player2"])
+
+
+class PlayerManagementTests(unittest.TestCase):
+    def setUp(self):
+        """Create temporary config files for testing."""
+        self.temp_dir = tempfile.TemporaryDirectory()
+        self.temp_path = Path(self.temp_dir.name)
+        self.players_path = self.temp_path / "players.json"
+        self.bots_path = self.temp_path / "bots.json"
+
+        # Initialize with default configs
+        config.save_json_list(self.players_path, config.DEFAULT_PLAYERS)
+        config.save_json_list(self.bots_path, config.DEFAULT_BOTS)
+
+    def tearDown(self):
+        """Clean up temporary directories."""
+        self.temp_dir.cleanup()
+
+    def test_add_player_with_valid_team_tag(self):
+        """Adding a player with a valid team tag should succeed."""
+        success, msg = player_management.add_player(
+            "RK NewPlayer",
+            self.players_path,
+        )
+
+        self.assertTrue(success)
+        players = player_management.get_players(self.players_path)
+        self.assertIn("RK NewPlayer", players)
+
+    def test_add_player_without_team_tag_fails(self):
+        """Adding a player without a team tag should fail."""
+        success, msg = player_management.add_player(
+            "NoTeamPlayer",
+            self.players_path,
+        )
+
+        self.assertFalse(success)
+        self.assertNotIn("NoTeamPlayer", player_management.get_players(self.players_path))
+
+    def test_add_duplicate_player_fails(self):
+        """Adding an already existing player should fail."""
+        player_management.add_player("RK NewPlayer", self.players_path)
+        success, msg = player_management.add_player(
+            "RK NewPlayer",
+            self.players_path,
+        )
+
+        self.assertFalse(success)
+
+    def test_remove_player_succeeds(self):
+        """Removing an existing player should succeed."""
+        player_management.add_player("RK ToRemove", self.players_path)
+        success, msg = player_management.remove_player(
+            "RK ToRemove",
+            self.players_path,
+        )
+
+        self.assertTrue(success)
+        self.assertNotIn("RK ToRemove", player_management.get_players(self.players_path))
+
+    def test_remove_nonexistent_player_fails(self):
+        """Removing a non-existent player should fail."""
+        success, msg = player_management.remove_player(
+            "RK NonExistent",
+            self.players_path,
+        )
+
+        self.assertFalse(success)
+
+    def test_add_bot_succeeds(self):
+        """Adding a new bot should succeed."""
+        success, msg = player_management.add_bot(
+            "NewCharacter",
+            self.bots_path,
+        )
+
+        self.assertTrue(success)
+        bots = player_management.get_bots(self.bots_path)
+        self.assertIn("NewCharacter", bots)
+
+    def test_add_duplicate_bot_fails(self):
+        """Adding a duplicate bot should fail."""
+        player_management.add_bot("DuplicateBot", self.bots_path)
+        success, msg = player_management.add_bot(
+            "DuplicateBot",
+            self.bots_path,
+        )
+
+        self.assertFalse(success)
+
+    def test_remove_bot_succeeds(self):
+        """Removing an existing bot should succeed."""
+        player_management.add_bot("TempBot", self.bots_path)
+        success, msg = player_management.remove_bot(
+            "TempBot",
+            self.bots_path,
+        )
+
+        self.assertTrue(success)
+        self.assertNotIn("TempBot", player_management.get_bots(self.bots_path))
+
+    def test_remove_nonexistent_bot_fails(self):
+        """Removing a non-existent bot should fail."""
+        success, msg = player_management.remove_bot(
+            "NonExistentBot",
+            self.bots_path,
+        )
+
+        self.assertFalse(success)
 
 
 if __name__ == "__main__":

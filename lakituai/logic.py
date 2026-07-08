@@ -2,9 +2,12 @@
 
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Sequence
 
 import cv2
 from rapidfuzz import process, fuzz
+
+from lakituai import config
 
 BASE_W = 1920
 BASE_H = 1080
@@ -13,98 +16,15 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 RESOURCES_DIR = PROJECT_ROOT / "resources"
 SCREENSHOTS_DIR = RESOURCES_DIR / "screenshots"
 ROWS_DIR = RESOURCES_DIR / "rows"
-MATCH_THRESHOLD = 70
-POINTS_BY_POSITION = (15, 12, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1)
-TEAM_TAGS = ("RK", "ne")
-BOT_NAMES = (
-    "Mario",
-    "Luigi",
-    "Peach",
-    "Bowser",
-    "Yoshi",
-    "Toad",
-    "Daisy",
-    "Rosalina",
-    "Estela",
-    "Donkey Kong",
-    "Wario",
-    "Koopa",
-    "Pauline",
-    "Waluigi",
-    "Toadette",
-    "Baby Mario",
-    "Baby Luigi",
-    "Baby Peach",
-    "Baby Daisy",
-    "Baby Rosalina",
-    "Baby Estela",
-    "Bowser Jr",
-    "Lakitu",
-    "King Boo",
-    "Shy Guy",
-    "Birdo",
-    "Dry Bones",
-    "Huesitos",
-    "Wiggler",
-    "Floruga",
-    "Hammer Bro",
-    "Hermano Martillo",
-    "Chargin' Chuck",
-    "Placapum",
-    "Nabbit",
-    "Caco Gazapo",
-    "Monty Mole",
-    "Topo Monty",
-    "Goomba",
-    "Piranha Plant",
-    "Planta Piraña",
-    "Pianta",
-    "Spike",
-    "Escupico",
-    "Cow",
-    "Moo Moo",
-    "Pokey",
-    "Swoop",
-    "Biddybud",
-    "Para-Biddybud",
-    "Biddybud alado",
-    "Penguin",
-    "Pingüino",
-    "Sidestepper",
-    "Snowman",
-    "Hombre de Nieve",
-    "Cataquack",
-    "Catacuac",
-    "Fish Bone",
-    "Fishbone",
-    "Dolphin",
-    "Delfín",
-    "Peepa",
-    "Bat",
-    "Murciélago",
-    "Stingby",
-    "Abejorro",
-    "Rocky Wrench",
-    "Coin Coffer",
-    "Cheep Cheep",
-    "Conkdor",
-)
-BOT_MATCH_THRESHOLD = 90
 
-PLAYERS = [
-    "RK AxeeL",
-    "ne.ths",
-    "RK ivanchu",
-    "ne.LOLmdr",
-    "RK Aketx",
-    "ne.popoff",
-    "ne.crr",
-    "RK Kevo",
-    "ne.KIRIO",
-    "RK jonz",
-    "ne.starlow",
-    "RK César",
-]
+# Load configuration from files, with hardcoded defaults as fallback
+_LOADED_CONFIG = config.load_config()
+POINTS_BY_POSITION = _LOADED_CONFIG.points_by_position
+TEAM_TAGS = _LOADED_CONFIG.team_tags
+BOT_NAMES = _LOADED_CONFIG.bots
+BOT_MATCH_THRESHOLD = _LOADED_CONFIG.bot_match_threshold
+PLAYERS = _LOADED_CONFIG.players
+MATCH_THRESHOLD = _LOADED_CONFIG.match_threshold
 
 
 @dataclass(frozen=True)
