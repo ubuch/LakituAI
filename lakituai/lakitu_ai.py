@@ -6,6 +6,8 @@ calculating player/team points.
 
 import argparse
 import sys
+import json
+from datetime import datetime
 from pathlib import Path
 
 from lakituai import logic, ocr
@@ -72,28 +74,29 @@ def validate_image_path(image_path: str) -> Path:
 
 def process_scoreboard(image_path: Path) -> None:
     """Process a scoreboard image and print results.
-    
+
     Extracts scoreboard rows from image, runs OCR, matches players, and
-    calculates race points. Results are printed to stdout.
-    
+    calculates race points. Results are printed to stdout and persisted to a
+    JSON file under resources/results/ for later consumption.
+
     Args:
         image_path: Path to the scoreboard image.
-    
+
     Raises:
         FileNotFoundError: If image cannot be read.
         ValueError: If OCR or processing fails.
     """
     print(f"Processing image: {image_path}")
     print("-" * 80)
-    
+
     try:
         row_paths = logic.prepare_scoreboard_rows(image_path)
         print(f"Extracted {len(row_paths)} scoreboard rows")
-        
+
         processor, model = ocr.init_ocr()
         ocr_results = ocr.run_ocr(processor, model, row_paths)
         scoreboard_rows = logic.build_scoreboard_results(ocr_results)
-        
+
         print("\nSCOREBOARD RESULTS:")
         print("-" * 80)
         for row in scoreboard_rows:
@@ -104,22 +107,89 @@ def process_scoreboard(image_path: Path) -> None:
                 f"POINTS: {row.points:2d} TO: {row.points_recipient:15s} || "
                 f"MATCH: {row.match_score:5.1f} ({row.match_source})"
             )
-        
+
         standings = logic.add_race_to_standings(scoreboard_rows)
-        
+
         print("\n" + "=" * 80)
         print("TOURNAMENT STANDINGS")
         print("=" * 80)
         print("\nPLAYER POINTS:")
         for player in sorted(standings.player_points, key=standings.player_points.get, reverse=True):
             print(f"  {player:20s}: {standings.player_points[player]:3d}")
-        
+
         print("\nTEAM POINTS:")
         for team in sorted(standings.team_points, key=standings.team_points.get, reverse=True):
             print(f"  {team:20s}: {standings.team_points[team]:3d}")
-        
+
         print(f"\nRaces played: {standings.races_played}")
-        
+
+        # Persist machine-readable race results for later consumption (UI/chat)
+        results = {
+            "image_path": str(image_path),
+            "generated_at": datetime.utcnow().isoformat() + "Z",
+            "rows": [],
+            "standings": {
+                "player_points": standings.player_points,
+                "team_points": standings.team_points,
+                "races_played": standings.races_played,
+            },
+        }
+
+        for row in scoreboard_rows:
+            results["rows"].append({
+                "row_number": row.row_number,
+                "ocr_text": row.ocr_text,
+                "normalized_text": row.normalized_text,
+                "matched_player": row.matched_player,
+                "points_recipient": row.points_recipient,
+                "points": row.points,
+                "match_score": row.match_score,
+                "match_source": row.match_source,
+                "is_bot": row.is_bot,
+                "is_missing_player": row.is_missing_player,
+            })
+
+        results_dir = logic.RESOURCES_DIR / "results"
+        results_dir.mkdir(parents=True, exist_ok=True)
+
+        # Determine race number by parsing existing race filenames and taking max + 1
+        import re
+        existing = list(results_dir.glob('race_*.json'))
+        max_n = 0
+        for p in existing:
+            m = re.match(r"race_(\d+)_", p.name)
+            if m:
+                try:
+                    n = int(m.group(1))
+                    if n > max_n:
+                        max_n = n
+                except ValueError:
+                    continue
+        race_number = max_n + 1
+
+        # Derive exactly two team tags for filename from standings (use first two keys)
+        team_keys = list(standings.team_points.keys())
+        tag1 = team_keys[0] if len(team_keys) >= 1 else 'teamA'
+        tag2 = team_keys[1] if len(team_keys) >= 2 else ('teamB' if len(team_keys) == 1 else 'teamA')
+
+        # Sanitize tags for filenames (keep alnum, dash, underscore)
+        def _sanitize(s: str) -> str:
+            s = str(s).replace(' ', '_')
+            return re.sub(r'[^A-Za-z0-9_\-]', '', s)
+
+        tag1_s = _sanitize(tag1) or 'teamA'
+        tag2_s = _sanitize(tag2) or 'teamB'
+
+        # Date as YYYY_MM_DD per request
+        date_str = datetime.utcnow().strftime('%Y_%m_%d')
+        filename = f"race_{race_number}_{tag1_s}-{tag2_s}_{date_str}.json"
+        out_path = results_dir / filename
+
+        with open(out_path, "w", encoding="utf-8") as f:
+            json.dump(results, f, ensure_ascii=False, indent=2)
+
+        print(f"\nSaved race results to: {out_path}")
+
     except FileNotFoundError as e:
         print(f"ERROR: {e}", file=sys.stderr)
         raise
