@@ -39,3 +39,9 @@ Thumbs.db
 tmp/
 temp/
 outputs/
+
+# Generated local files
+resources/results
+resources/rows
+resources/scoreboards
+resources/screenshots
