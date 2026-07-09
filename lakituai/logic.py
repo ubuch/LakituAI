@@ -2,7 +2,6 @@
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Sequence
 
 import cv2
 from rapidfuzz import process, fuzz
@@ -53,7 +52,7 @@ class ScoreboardRowResult:
 
 
 @dataclass
-class TournamentStandings:
+class WarStandings:
     """Accumulated points across one or more races."""
 
     player_points: dict[str, int] = field(default_factory=dict)
@@ -401,12 +400,12 @@ def add_race_to_standings(
     players=PLAYERS,
     team_tags=TEAM_TAGS,
 ):
-    """Add one race result to cumulative tournament standings."""
+    """Add one race result to cumulative war standings."""
 
     validate_player_tags(players, team_tags)
 
     if standings is None:
-        standings = TournamentStandings()
+        standings = WarStandings()
 
     for player, points in build_player_points(scoreboard_rows).items():
         standings.player_points[player] = standings.player_points.get(player, 0) + points

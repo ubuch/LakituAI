@@ -1,7 +1,8 @@
 """Command-line entry point for processing Mario Kart World scoreboard screenshots.
 
 This module provides the main CLI interface for processing race scoreboards and
-calculating player/team points.
+calculating player/team points. Results are persisted to SQLite for cumulative
+war standings. Supports multiple wars.
 """
 
 import argparse
@@ -10,14 +11,14 @@ import json
 from datetime import datetime
 from pathlib import Path
 
-from lakituai import logic, ocr
+from lakituai import logic, ocr, persistence, war_manager
 
 
 def parse_arguments() -> argparse.Namespace:
     """Parse and return command-line arguments.
     
     Returns:
-        Parsed arguments with 'image_path' attribute.
+        Parsed arguments with 'image_path' and war management options.
     
     Raises:
         SystemExit: If required arguments are missing or invalid.
@@ -28,14 +29,44 @@ def parse_arguments() -> argparse.Namespace:
         epilog=(
             "Examples:\n"
             "  python -m lakituai path/to/screenshot.jpg\n"
-            "  python -m lakituai /home/user/races/race1.png"
+            "  python -m lakituai --war 'War 1' path/to/screenshot.jpg\n"
+            "  python -m lakituai --list-wars\n"
+            "  python -m lakituai --delete-war 2"
         ),
     )
     
-    parser.add_argument(
+    # War management (mutually exclusive with image_path)
+    group = parser.add_mutually_exclusive_group()
+    
+    group.add_argument(
         "image_path",
+        nargs="?",
         type=str,
+        default=None,
         help="Path to the scoreboard screenshot image (JPEG, PNG, etc.)",
+    )
+    
+    group.add_argument(
+        "--list-wars",
+        action="store_true",
+        help="List all wars with details (races, teams, date)",
+    )
+    
+    group.add_argument(
+        "--delete-war",
+        type=int,
+        metavar="ID",
+        help="Delete a war by ID (use --list-wars to see IDs)",
+    )
+    
+    # War selection (only with image_path)
+    parser.add_argument(
+        "--war",
+        "--war",
+        type=str,
+        default=None,
+        help="War name (defaults to current war)",
+        dest="war",
     )
     
     return parser.parse_args()
@@ -72,15 +103,18 @@ def validate_image_path(image_path: str) -> Path:
     return path
 
 
-def process_scoreboard(image_path: Path) -> None:
-    """Process a scoreboard image and print results.
+def process_scoreboard(image_path: Path, war_name: str = "Default") -> None:
+    """Process a scoreboard image and persist results to SQLite + JSON.
 
     Extracts scoreboard rows from image, runs OCR, matches players, and
-    calculates race points. Results are printed to stdout and persisted to a
-    JSON file under resources/results/ for later consumption.
+    calculates race points. Results are:
+    - Saved to JSON (resources/results/race_n_TAG1-TAG2_YYYY_MM_DD.json)
+    - Inserted into SQLite war database (resources/war.db)
+    - Printed to stdout for user feedback
 
     Args:
         image_path: Path to the scoreboard image.
+        war_name: Name of the war (defaults to "Default").
 
     Raises:
         FileNotFoundError: If image cannot be read.
@@ -90,6 +124,11 @@ def process_scoreboard(image_path: Path) -> None:
     print("-" * 80)
 
     try:
+        # Initialize database and get/create war
+        persistence.init_db()
+        war_id = persistence.get_or_create_war(war_name)
+
+        # Process image through OCR pipeline
         row_paths = logic.prepare_scoreboard_rows(image_path)
         print(f"Extracted {len(row_paths)} scoreboard rows")
 
@@ -108,51 +147,11 @@ def process_scoreboard(image_path: Path) -> None:
                 f"MATCH: {row.match_score:5.1f} ({row.match_source})"
             )
 
-        standings = logic.add_race_to_standings(scoreboard_rows)
-
-        print("\n" + "=" * 80)
-        print("TOURNAMENT STANDINGS")
-        print("=" * 80)
-        print("\nPLAYER POINTS:")
-        for player in sorted(standings.player_points, key=standings.player_points.get, reverse=True):
-            print(f"  {player:20s}: {standings.player_points[player]:3d}")
-
-        print("\nTEAM POINTS:")
-        for team in sorted(standings.team_points, key=standings.team_points.get, reverse=True):
-            print(f"  {team:20s}: {standings.team_points[team]:3d}")
-
-        print(f"\nRaces played: {standings.races_played}")
-
-        # Persist machine-readable race results for later consumption (UI/chat)
-        results = {
-            "image_path": str(image_path),
-            "generated_at": datetime.utcnow().isoformat() + "Z",
-            "rows": [],
-            "standings": {
-                "player_points": standings.player_points,
-                "team_points": standings.team_points,
-                "races_played": standings.races_played,
-            },
-        }
-
-        for row in scoreboard_rows:
-            results["rows"].append({
-                "row_number": row.row_number,
-                "ocr_text": row.ocr_text,
-                "normalized_text": row.normalized_text,
-                "matched_player": row.matched_player,
-                "points_recipient": row.points_recipient,
-                "points": row.points,
-                "match_score": row.match_score,
-                "match_source": row.match_source,
-                "is_bot": row.is_bot,
-                "is_missing_player": row.is_missing_player,
-            })
-
+        # Generate race JSON file with deterministic naming
         results_dir = logic.RESOURCES_DIR / "results"
         results_dir.mkdir(parents=True, exist_ok=True)
 
-        # Determine race number by parsing existing race filenames and taking max + 1
+        # Determine race number by parsing existing race filenames
         import re
         existing = list(results_dir.glob('race_*.json'))
         max_n = 0
@@ -167,12 +166,12 @@ def process_scoreboard(image_path: Path) -> None:
                     continue
         race_number = max_n + 1
 
-        # Derive exactly two team tags for filename from standings (use first two keys)
-        team_keys = list(standings.team_points.keys())
+        # Derive team tags from standings
+        team_keys = list(logic.build_team_points(scoreboard_rows).keys())
         tag1 = team_keys[0] if len(team_keys) >= 1 else 'teamA'
         tag2 = team_keys[1] if len(team_keys) >= 2 else ('teamB' if len(team_keys) == 1 else 'teamA')
 
-        # Sanitize tags for filenames (keep alnum, dash, underscore)
+        # Sanitize tags for filenames
         def _sanitize(s: str) -> str:
             s = str(s).replace(' ', '_')
             return re.sub(r'[^A-Za-z0-9_\-]', '', s)
@@ -180,15 +179,70 @@ def process_scoreboard(image_path: Path) -> None:
         tag1_s = _sanitize(tag1) or 'teamA'
         tag2_s = _sanitize(tag2) or 'teamB'
 
-        # Date as YYYY_MM_DD per request
+        # Save race JSON
         date_str = datetime.utcnow().strftime('%Y_%m_%d')
-        filename = f"race_{race_number}_{tag1_s}-{tag2_s}_{date_str}.json"
-        out_path = results_dir / filename
+        json_filename = f"race_{race_number}_{tag1_s}-{tag2_s}_{date_str}.json"
+        json_path = results_dir / json_filename
 
-        with open(out_path, "w", encoding="utf-8") as f:
-            json.dump(results, f, ensure_ascii=False, indent=2)
+        race_json = {
+            "image_path": str(image_path),
+            "generated_at": datetime.utcnow().isoformat() + "Z",
+            "rows": [],
+            "standings": {
+                "player_points": logic.build_player_points(scoreboard_rows),
+                "team_points": logic.build_team_points(scoreboard_rows),
+            },
+        }
 
-        print(f"\nSaved race results to: {out_path}")
+        for row in scoreboard_rows:
+            race_json["rows"].append({
+                "row_number": row.row_number,
+                "ocr_text": row.ocr_text,
+                "normalized_text": row.normalized_text,
+                "matched_player": row.matched_player,
+                "points_recipient": row.points_recipient,
+                "points": row.points,
+                "match_score": row.match_score,
+                "match_source": row.match_source,
+                "is_bot": row.is_bot,
+                "is_missing_player": row.is_missing_player,
+            })
+
+        with open(json_path, "w", encoding="utf-8") as f:
+            json.dump(race_json, f, ensure_ascii=False, indent=2)
+
+        print(f"\nSaved race JSON to: {json_path}")
+
+        # Save race to SQLite
+        persistence.save_race(
+            war_id=war_id,
+            race_number=race_number,
+            image_path=str(image_path),
+            json_path=str(json_path),
+            scoreboard_rows=scoreboard_rows,
+        )
+        print(f"Saved race #{race_number} to database")
+
+        # Update standings in SQLite
+        persistence.update_standings(war_id, scoreboard_rows)
+
+        # Retrieve and display cumulative standings from SQLite
+        player_standings = persistence.get_player_standings(war_id)
+        team_standings = persistence.get_team_standings(war_id)
+        races_played = persistence.get_races_played(war_id)
+
+        print("\n" + "=" * 80)
+        print("WAR STANDINGS (CUMULATIVE)")
+        print("=" * 80)
+        print("\nPLAYER POINTS:")
+        for player, points in player_standings.items():
+            print(f"  {player:20s}: {points:3d}")
+
+        print("\nTEAM POINTS:")
+        for team, points in team_standings.items():
+            print(f"  {team:20s}: {points:3d}")
+
+        print(f"\nRaces played: {races_played}")
 
     except FileNotFoundError as e:
         print(f"ERROR: {e}", file=sys.stderr)
@@ -198,12 +252,91 @@ def process_scoreboard(image_path: Path) -> None:
         raise
 
 
+def list_wars_cmd() -> None:
+    """List all wars with metadata."""
+    persistence.init_db()
+    wars = persistence.list_wars()
+    
+    if not wars:
+        print("No wars found.")
+        return
+    
+    print("\n" + "=" * 100)
+    print("WARS")
+    print("=" * 100)
+    
+    for t in wars:
+        teams_str = ", ".join(t["teams"]) if t["teams"] else "—"
+        print(f"\nID #{t['war_id']}: {t['name']}")
+        print(f"  Created: {t['created_at']}")
+        print(f"  Races: {t['races_count']}")
+        print(f"  Teams: {teams_str}")
+    
+    print("\n" + "=" * 100)
+
+
+def delete_war_cmd(war_id: int) -> None:
+    """Delete a war by ID."""
+    persistence.init_db()
+    wars = persistence.list_wars()
+    
+    # Find war to show name
+    war_name = None
+    for t in wars:
+        if t["war_id"] == war_id:
+            war_name = t["name"]
+            break
+    
+    if not war_name:
+        print(f"ERROR: War ID {war_id} not found.")
+        sys.exit(1)
+    
+    # Confirm deletion
+    response = input(
+        f"\n⚠️  Delete war '#{war_id}: {war_name}' and all its races? (yes/no): "
+    ).strip().lower()
+    
+    if response != "yes":
+        print("Deletion cancelled.")
+        return
+    
+    if persistence.delete_war(war_id):
+        print(f"✓ War '#{war_id}: {war_name}' deleted.")
+    else:
+        print(f"ERROR: Could not delete war {war_id}.")
+        sys.exit(1)
+
+
 def main() -> None:
     """Main CLI entry point."""
     try:
         args = parse_arguments()
+        
+        # Handle war management commands
+        if args.list_wars:
+            list_wars_cmd()
+            return
+        
+        if args.delete_war is not None:
+            delete_war_cmd(args.delete_war)
+            return
+        
+        # Handle image processing
+        if args.image_path is None:
+            print("ERROR: Image path required (or use --list-wars, --delete-war)")
+            sys.exit(1)
+        
         image_path = validate_image_path(args.image_path)
-        process_scoreboard(image_path)
+        
+        # Determine war to use
+        war_name = args.war
+        if war_name is None:
+            war_name = war_manager.load_current_war()
+        else:
+            # Update current war if specified
+            war_manager.set_current_war(war_name)
+        
+        process_scoreboard(image_path, war_name)
     except (FileNotFoundError, ValueError) as e:
         print(f"ERROR: {e}", file=sys.stderr)
         sys.exit(1)

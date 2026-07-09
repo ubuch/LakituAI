@@ -40,8 +40,9 @@ tmp/
 temp/
 outputs/
 
-# Generated local files
+# Resources (generated/user input, not version controlled)
 resources/results
 resources/rows
 resources/scoreboards
 resources/screenshots
+resources/tournament.db
