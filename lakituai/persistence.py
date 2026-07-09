@@ -12,7 +12,7 @@ from typing import Optional
 from lakituai import logic
 
 
-DB_PATH = logic.RESOURCES_DIR / "war.db"
+DB_PATH = logic.RESOURCES_DIR / "wars.db"
 
 
 def init_db(db_path: Path = DB_PATH) -> None:

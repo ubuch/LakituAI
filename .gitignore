@@ -41,8 +41,9 @@ temp/
 outputs/
 
 # Resources (generated/user input, not version controlled)
+config/current_war.json
 resources/results
 resources/rows
 resources/scoreboards
 resources/screenshots
-resources/tournament.db
+resources/wars.db
