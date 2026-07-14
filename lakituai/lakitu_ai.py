@@ -69,7 +69,10 @@ def parse_arguments() -> argparse.Namespace:
         dest="war",
     )
     
-    return parser.parse_args()
+    args = parser.parse_args()
+    if args.image_path is None and not args.list_wars and args.delete_war is None:
+        parser.error("Image path required (or use --list-wars, --delete-war)")
+    return args
 
 
 def validate_image_path(image_path: str) -> Path:
