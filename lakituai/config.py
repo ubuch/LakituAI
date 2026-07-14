@@ -140,6 +140,10 @@ class GameConfig:
     points_by_position: tuple[int, ...] = field(default_factory=lambda: DEFAULT_POINTS_BY_POSITION)
     match_threshold: int = 70
     bot_match_threshold: int = 90
+    races_per_war: int = 12
+
+
+RULES_CONFIG_PATH = CONFIG_DIR / "settings.json"
 
 
 def load_json_list(path: Path, fallback: Sequence[str]) -> Sequence[str]:
@@ -166,6 +170,7 @@ def save_json_list(path: Path, items: Sequence[str]) -> None:
 def load_config(
     bots_path: Path = BOTS_CONFIG_PATH,
     players_path: Path = PLAYERS_CONFIG_PATH,
+    rules_path: Path = RULES_CONFIG_PATH,
 ) -> GameConfig:
     """Load configuration from JSON files with built-in defaults as fallback.
     
@@ -176,6 +181,7 @@ def load_config(
     Args:
         bots_path: Path to JSON file containing bot character names.
         players_path: Path to JSON file containing player names.
+        rules_path: Path to JSON file containing rules settings.
     
     Returns:
         GameConfig instance with loaded or default values.
@@ -183,11 +189,21 @@ def load_config(
     bots = load_json_list(bots_path, DEFAULT_BOTS)
     players = load_json_list(players_path, DEFAULT_PLAYERS)
     
+    races_per_war = 12
+    if rules_path.exists():
+        try:
+            with open(rules_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                races_per_war = data.get("races_per_war", 12)
+        except Exception:
+            pass
+    
     return GameConfig(
         bots=bots,
         players=players,
         team_tags=DEFAULT_TEAM_TAGS,
         points_by_position=DEFAULT_POINTS_BY_POSITION,
+        races_per_war=races_per_war,
     )
 
 
@@ -195,6 +211,7 @@ def save_config(
     config: GameConfig,
     bots_path: Path = BOTS_CONFIG_PATH,
     players_path: Path = PLAYERS_CONFIG_PATH,
+    rules_path: Path = RULES_CONFIG_PATH,
 ) -> None:
     """Save current configuration to JSON files.
     
@@ -202,9 +219,17 @@ def save_config(
         config: GameConfig instance to save.
         bots_path: Path where bot names will be saved.
         players_path: Path where player names will be saved.
+        rules_path: Path where rules settings will be saved.
     """
     save_json_list(bots_path, config.bots)
     save_json_list(players_path, config.players)
+    
+    rules_path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        with open(rules_path, "w", encoding="utf-8") as f:
+            json.dump({"races_per_war": config.races_per_war}, f, indent=2)
+    except Exception:
+        pass
 
 
 def create_default_config_files() -> None:

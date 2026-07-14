@@ -8,6 +8,7 @@ war standings. Supports multiple wars.
 import argparse
 import sys
 import json
+import re
 from datetime import datetime
 from pathlib import Path
 
@@ -338,6 +339,38 @@ def main() -> None:
         else:
             # Update current war if specified
             war_manager.set_current_war(war_name)
+            
+        # Check if the war has reached the limit of races and auto-rollover if needed
+        persistence.init_db()
+        war_id = persistence.get_war_by_name(war_name)
+        if war_id is not None:
+            races_played = persistence.get_races_played(war_id)
+            if races_played >= logic.RACES_PER_WAR:
+                existing_wars = persistence.list_wars()
+                existing_names = [w["name"] for w in existing_wars]
+                
+                # Naming strategy: increment number if name ends with number, else find next available War N
+                match = re.match(r"^(.*?)\s*(\d+)$", war_name)
+                if match:
+                    prefix, num = match.groups()
+                    next_num = int(num) + 1
+                    new_war_name = f"{prefix} {next_num}".strip()
+                    while new_war_name in existing_names:
+                        next_num += 1
+                        new_war_name = f"{prefix} {next_num}".strip()
+                else:
+                    base = "War"
+                    num = 1
+                    new_war_name = f"{base} {num}"
+                    while new_war_name in existing_names:
+                        num += 1
+                        new_war_name = f"{base} {num}"
+                        
+                print(f"\nAutomatic rollover: Current war '{war_name}' reached the limit of {logic.RACES_PER_WAR} races.")
+                print(f"Automatically switching to a new war: '{new_war_name}'")
+                
+                war_manager.set_current_war(new_war_name)
+                war_name = new_war_name
         
         process_scoreboard(image_path, war_name)
     except (FileNotFoundError, ValueError) as e:

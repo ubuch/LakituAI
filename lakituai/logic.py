@@ -24,6 +24,7 @@ BOT_NAMES = _LOADED_CONFIG.bots
 BOT_MATCH_THRESHOLD = _LOADED_CONFIG.bot_match_threshold
 PLAYERS = _LOADED_CONFIG.players
 MATCH_THRESHOLD = _LOADED_CONFIG.match_threshold
+RACES_PER_WAR = _LOADED_CONFIG.races_per_war
 
 
 @dataclass(frozen=True)
