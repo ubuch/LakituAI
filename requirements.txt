@@ -7,3 +7,4 @@ tokenizers==0.22.2
 sentencepiece==0.2.2
 huggingface_hub==1.23.0
 torchvision==0.28.0
+ollama==0.6.2
