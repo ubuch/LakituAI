@@ -139,5 +139,43 @@ class CLIRolloverTests(unittest.TestCase):
         mock_process.assert_called_once_with(Path("test.jpg"), "War 2")
 
 
+class CLIResetDbTests(unittest.TestCase):
+    """Tests for --reset-db CLI flag."""
+
+    def test_parse_arguments_with_reset_db(self):
+        """Parsing --reset-db should set reset_db flag."""
+        with mock.patch("sys.argv", ["prog", "--reset-db"]):
+            args = lakitu_ai.parse_arguments()
+            self.assertTrue(args.reset_db)
+
+    @mock.patch("lakituai.lakitu_ai.persistence.reset_db")
+    @mock.patch("lakituai.lakitu_ai.persistence.list_wars")
+    @mock.patch("lakituai.lakitu_ai.persistence.init_db")
+    @mock.patch("builtins.input", return_value="yes")
+    def test_reset_db_cmd_calls_reset(
+        self, mock_input, mock_init_db, mock_list_wars, mock_reset_db
+    ):
+        """Calling reset_db_cmd with 'yes' should call persistence.reset_db."""
+        mock_list_wars.return_value = [{"war_id": 1, "name": "War 1", "races_count": 5}]
+
+        lakitu_ai.reset_db_cmd()
+
+        mock_reset_db.assert_called_once()
+
+    @mock.patch("lakituai.lakitu_ai.persistence.reset_db")
+    @mock.patch("lakituai.lakitu_ai.persistence.list_wars")
+    @mock.patch("lakituai.lakitu_ai.persistence.init_db")
+    @mock.patch("builtins.input", return_value="no")
+    def test_reset_db_cmd_cancelled(
+        self, mock_input, mock_init_db, mock_list_wars, mock_reset_db
+    ):
+        """Calling reset_db_cmd with 'no' should not call persistence.reset_db."""
+        mock_list_wars.return_value = [{"war_id": 1, "name": "War 1", "races_count": 5}]
+
+        lakitu_ai.reset_db_cmd()
+
+        mock_reset_db.assert_not_called()
+
+
 if __name__ == "__main__":
     unittest.main()

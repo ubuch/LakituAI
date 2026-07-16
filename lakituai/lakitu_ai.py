@@ -60,6 +60,12 @@ def parse_arguments() -> argparse.Namespace:
         help="Delete a war by ID (use --list-wars to see IDs)",
     )
     
+    group.add_argument(
+        "--reset-db",
+        action="store_true",
+        help="Reset the database: drop all tables and recreate schema (preserves file)",
+    )
+    
     # War selection (only with image_path)
     parser.add_argument(
         "--war",
@@ -71,8 +77,15 @@ def parse_arguments() -> argparse.Namespace:
     )
     
     args = parser.parse_args()
-    if args.image_path is None and not args.list_wars and args.delete_war is None:
-        parser.error("Image path required (or use --list-wars, --delete-war)")
+    if (
+        args.image_path is None
+        and not args.list_wars
+        and args.delete_war is None
+        and not args.reset_db
+    ):
+        parser.error(
+            "Image path required (or use --list-wars, --delete-war, --reset-db)"
+        )
     return args
 
 
@@ -311,6 +324,26 @@ def delete_war_cmd(war_id: int) -> None:
         sys.exit(1)
 
 
+def reset_db_cmd() -> None:
+    """Reset the database by dropping all tables and recreating schema."""
+    persistence.init_db()
+    wars = persistence.list_wars()
+    total_races = sum(w["races_count"] for w in wars)
+    total_wars = len(wars)
+
+    response = input(
+        f"\nThis will DELETE all data: {total_wars} war(s), {total_races} race(s). "
+        "The database file will be preserved but emptied. (yes/no): "
+    ).strip().lower()
+
+    if response != "yes":
+        print("Reset cancelled.")
+        return
+
+    persistence.reset_db()
+    print("Database reset successfully. Schema recreated, all data removed.")
+
+
 def main() -> None:
     """Main CLI entry point."""
     try:
@@ -323,6 +356,10 @@ def main() -> None:
         
         if args.delete_war is not None:
             delete_war_cmd(args.delete_war)
+            return
+        
+        if args.reset_db:
+            reset_db_cmd()
             return
         
         # Handle image processing

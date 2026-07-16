@@ -445,3 +445,28 @@ def get_war_by_name(name: str, db_path: Path = DB_PATH) -> Optional[int]:
 
     return result[0] if result else None
 
+
+def reset_db(db_path: Path = DB_PATH) -> None:
+    """Reset the database by dropping all tables and recreating the schema.
+    
+    This preserves the database file but removes all data and recreates
+    the tables from scratch. Equivalent to deleting and reinitializing
+    the database without touching the file system.
+    
+    Args:
+        db_path: Path to SQLite database.
+    """
+    conn = sqlite3.connect(str(db_path))
+    cursor = conn.cursor()
+
+    cursor.execute("DROP TABLE IF EXISTS race_results")
+    cursor.execute("DROP TABLE IF EXISTS races")
+    cursor.execute("DROP TABLE IF EXISTS player_standings")
+    cursor.execute("DROP TABLE IF EXISTS team_standings")
+    cursor.execute("DROP TABLE IF EXISTS war")
+
+    conn.commit()
+    conn.close()
+
+    init_db(db_path)
+

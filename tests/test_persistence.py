@@ -172,6 +172,54 @@ class PersistenceTests(unittest.TestCase):
         # Verify deleted
         self.assertEqual(len(persistence.list_wars(db_path=self.db_path)), 0)
 
+    def test_reset_db(self):
+        """Resetting the DB should remove all data but preserve the file and schema."""
+        war_id = persistence.get_or_create_war("War 1", db_path=self.db_path)
+        
+        row = logic.ScoreboardRowResult(
+            row_number=1,
+            points=15,
+            ocr_text="ne PlayerA",
+            normalized_text="ne PlayerA",
+            matched_player="ne PlayerA",
+            points_recipient="ne PlayerA",
+            match_score=100.0,
+            match_source="players"
+        )
+        
+        persistence.save_race(
+            war_id=war_id,
+            race_number=1,
+            image_path="test.jpg",
+            json_path="test.json",
+            scoreboard_rows=[row],
+            db_path=self.db_path
+        )
+        persistence.update_standings(war_id, [row], team_tags=("ne",), db_path=self.db_path)
+
+        # Verify data exists
+        self.assertEqual(len(persistence.list_wars(db_path=self.db_path)), 1)
+
+        # Reset
+        persistence.reset_db(db_path=self.db_path)
+
+        # Verify file still exists
+        self.assertTrue(self.db_path.exists())
+
+        # Verify all data is gone
+        self.assertEqual(len(persistence.list_wars(db_path=self.db_path)), 0)
+
+        # Verify schema is functional (can create new data)
+        new_war_id = persistence.get_or_create_war("New War", db_path=self.db_path)
+        self.assertGreater(new_war_id, 0)
+        self.assertEqual(len(persistence.list_wars(db_path=self.db_path)), 1)
+
+    def test_reset_db_empty_database(self):
+        """Resetting an empty database should not raise errors."""
+        persistence.reset_db(db_path=self.db_path)
+        self.assertTrue(self.db_path.exists())
+        self.assertEqual(len(persistence.list_wars(db_path=self.db_path)), 0)
+
 
 if __name__ == "__main__":
     unittest.main()
