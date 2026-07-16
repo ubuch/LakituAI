@@ -32,7 +32,8 @@ def parse_arguments() -> argparse.Namespace:
             "  python -m lakituai path/to/screenshot.jpg\n"
             "  python -m lakituai --war 'War 1' path/to/screenshot.jpg\n"
             "  python -m lakituai --list-wars\n"
-            "  python -m lakituai --delete-war 2"
+            "  python -m lakituai --delete-war 2\n"
+            "  python -m lakituai --delete-wars 1 2 3"
         ),
     )
     
@@ -61,6 +62,13 @@ def parse_arguments() -> argparse.Namespace:
     )
     
     group.add_argument(
+        "--delete-wars",
+        nargs="+",
+        metavar="ID",
+        help="Delete multiple wars by ID (e.g., --delete-wars 1 2 3)",
+    )
+    
+    group.add_argument(
         "--reset-db",
         action="store_true",
         help="Reset the database: drop all tables and recreate schema (preserves file)",
@@ -81,10 +89,12 @@ def parse_arguments() -> argparse.Namespace:
         args.image_path is None
         and not args.list_wars
         and args.delete_war is None
+        and not args.delete_wars
         and not args.reset_db
     ):
         parser.error(
-            "Image path required (or use --list-wars, --delete-war, --reset-db)"
+            "Image path required "
+            "(or use --list-wars, --delete-war, --delete-wars, --reset-db)"
         )
     return args
 
@@ -294,33 +304,38 @@ def list_wars_cmd() -> None:
 
 def delete_war_cmd(war_id: int) -> None:
     """Delete a war by ID."""
+    delete_wars_cmd([war_id])
+
+
+def delete_wars_cmd(war_ids: list[int]) -> None:
+    """Delete one or more wars by ID."""
     persistence.init_db()
     wars = persistence.list_wars()
-    
-    # Find war to show name
-    war_name = None
-    for t in wars:
-        if t["war_id"] == war_id:
-            war_name = t["name"]
-            break
-    
-    if not war_name:
-        print(f"ERROR: War ID {war_id} not found.")
+    war_map = {w["war_id"]: w for w in wars}
+
+    # Validate all IDs before prompting
+    not_found = [wid for wid in war_ids if wid not in war_map]
+    if not_found:
+        print(f"ERROR: War ID(s) not found: {', '.join(str(i) for i in not_found)}")
         sys.exit(1)
-    
-    # Confirm deletion
-    response = input(
-        f"\n⚠️  Delete war '#{war_id}: {war_name}' and all its races? (yes/no): "
-    ).strip().lower()
-    
+
+    # Show summary
+    total_races = sum(war_map[wid]["races_count"] for wid in war_ids)
+    print(f"\nWars to delete ({len(war_ids)}):")
+    for wid in war_ids:
+        w = war_map[wid]
+        print(f"  #{wid}: {w['name']} ({w['races_count']} race(s))")
+    print(f"\nTotal: {len(war_ids)} war(s), {total_races} race(s)")
+
+    response = input("\nConfirm deletion? (yes/no): ").strip().lower()
     if response != "yes":
         print("Deletion cancelled.")
         return
-    
-    if persistence.delete_war(war_id):
-        print(f"✓ War '#{war_id}: {war_name}' deleted.")
+
+    if persistence.delete_wars(war_ids):
+        print(f"✓ Deleted {len(war_ids)} war(s).")
     else:
-        print(f"ERROR: Could not delete war {war_id}.")
+        print("ERROR: Deletion failed.")
         sys.exit(1)
 
 
@@ -356,6 +371,10 @@ def main() -> None:
         
         if args.delete_war is not None:
             delete_war_cmd(args.delete_war)
+            return
+        
+        if args.delete_wars is not None:
+            delete_wars_cmd([int(x) for x in args.delete_wars])
             return
         
         if args.reset_db:

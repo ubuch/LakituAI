@@ -405,21 +405,47 @@ def delete_war(war_id: int, db_path: Path = DB_PATH) -> bool:
     Returns:
        True if deletion succeeded, False if war not found.
     """
+    return delete_wars([war_id], db_path)
+
+
+def delete_wars(war_ids: list[int], db_path: Path = DB_PATH) -> bool:
+    """Delete multiple wars and all their associated data (cascade) in one transaction.
+    
+    Designed for future UI multi-select deletion. All deletions happen
+    atomically: if any error occurs, nothing is committed.
+    
+    Args:
+        war_ids: List of war IDs to delete.
+        db_path: Path to SQLite database.
+    
+    Returns:
+        True if all deletions succeeded, False if any war not found.
+    """
+    if not war_ids:
+        return True
+
     conn = sqlite3.connect(str(db_path))
     cursor = conn.cursor()
 
-    # Check if war exists
-    cursor.execute("SELECT id FROM war WHERE id = ?", (war_id,))
-    if not cursor.fetchone():
-       conn.close()
-       return False
+    # Verify all wars exist before deleting anything
+    placeholders = ",".join("?" for _ in war_ids)
+    cursor.execute(f"SELECT id FROM war WHERE id IN ({placeholders})", war_ids)
+    found_ids = {row[0] for row in cursor.fetchall()}
 
-    # Delete cascade: race_results -> races -> standings -> war
-    cursor.execute("DELETE FROM race_results WHERE race_id IN (SELECT id FROM races WHERE war_id = ?)", (war_id,))
-    cursor.execute("DELETE FROM races WHERE war_id = ?", (war_id,))
-    cursor.execute("DELETE FROM player_standings WHERE war_id = ?", (war_id,))
-    cursor.execute("DELETE FROM team_standings WHERE war_id = ?", (war_id,))
-    cursor.execute("DELETE FROM war WHERE id = ?", (war_id,))
+    if found_ids != set(war_ids):
+        conn.close()
+        return False
+
+    for war_id in war_ids:
+        cursor.execute(
+            "DELETE FROM race_results WHERE race_id IN "
+            "(SELECT id FROM races WHERE war_id = ?)",
+            (war_id,),
+        )
+        cursor.execute("DELETE FROM races WHERE war_id = ?", (war_id,))
+        cursor.execute("DELETE FROM player_standings WHERE war_id = ?", (war_id,))
+        cursor.execute("DELETE FROM team_standings WHERE war_id = ?", (war_id,))
+        cursor.execute("DELETE FROM war WHERE id = ?", (war_id,))
 
     conn.commit()
     conn.close()

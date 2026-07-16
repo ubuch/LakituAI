@@ -177,5 +177,61 @@ class CLIResetDbTests(unittest.TestCase):
         mock_reset_db.assert_not_called()
 
 
+class CLIDeleteWarsTests(unittest.TestCase):
+    """Tests for --delete-wars CLI flag."""
+
+    def test_parse_arguments_with_delete_wars(self):
+        """Parsing --delete-wars with multiple IDs should store them as a list."""
+        with mock.patch("sys.argv", ["prog", "--delete-wars", "1", "2", "3"]):
+            args = lakitu_ai.parse_arguments()
+            self.assertEqual(args.delete_wars, ["1", "2", "3"])
+
+    @mock.patch("lakituai.lakitu_ai.persistence.delete_wars")
+    @mock.patch("lakituai.lakitu_ai.persistence.list_wars")
+    @mock.patch("lakituai.lakitu_ai.persistence.init_db")
+    @mock.patch("builtins.input", return_value="yes")
+    def test_delete_wars_cmd_calls_persistence(
+        self, mock_input, mock_init_db, mock_list_wars, mock_delete_wars
+    ):
+        """Calling delete_wars_cmd with valid IDs should call persistence.delete_wars."""
+        mock_list_wars.return_value = [
+            {"war_id": 1, "name": "War 1", "races_count": 3},
+            {"war_id": 2, "name": "War 2", "races_count": 5},
+        ]
+        mock_delete_wars.return_value = True
+
+        lakitu_ai.delete_wars_cmd([1, 2])
+
+        mock_delete_wars.assert_called_once_with([1, 2])
+
+    @mock.patch("lakituai.lakitu_ai.persistence.delete_wars")
+    @mock.patch("lakituai.lakitu_ai.persistence.list_wars")
+    @mock.patch("lakituai.lakitu_ai.persistence.init_db")
+    @mock.patch("builtins.input", return_value="no")
+    def test_delete_wars_cmd_cancelled(
+        self, mock_input, mock_init_db, mock_list_wars, mock_delete_wars
+    ):
+        """Calling delete_wars_cmd with 'no' should not call persistence.delete_wars."""
+        mock_list_wars.return_value = [
+            {"war_id": 1, "name": "War 1", "races_count": 3},
+        ]
+
+        lakitu_ai.delete_wars_cmd([1])
+
+        mock_delete_wars.assert_not_called()
+
+    @mock.patch("lakituai.lakitu_ai.persistence.list_wars")
+    @mock.patch("lakituai.lakitu_ai.persistence.init_db")
+    def test_delete_wars_cmd_not_found_exits(self, mock_init_db, mock_list_wars):
+        """Calling delete_wars_cmd with non-existent ID should exit."""
+        mock_list_wars.return_value = [
+            {"war_id": 1, "name": "War 1", "races_count": 3},
+        ]
+
+        with mock.patch("sys.argv", ["prog"]):
+            with self.assertRaises(SystemExit):
+                lakitu_ai.delete_wars_cmd([1, 999])
+
+
 if __name__ == "__main__":
     unittest.main()

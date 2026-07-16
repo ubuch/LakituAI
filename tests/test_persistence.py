@@ -172,6 +172,52 @@ class PersistenceTests(unittest.TestCase):
         # Verify deleted
         self.assertEqual(len(persistence.list_wars(db_path=self.db_path)), 0)
 
+    def test_delete_wars_bulk(self):
+        """Deleting multiple wars should remove all of them in one call."""
+        war_id_1 = persistence.get_or_create_war("War A", db_path=self.db_path)
+        war_id_2 = persistence.get_or_create_war("War B", db_path=self.db_path)
+        war_id_3 = persistence.get_or_create_war("War C", db_path=self.db_path)
+
+        row = logic.ScoreboardRowResult(
+            row_number=1, points=15, ocr_text="ne PlayerA",
+            normalized_text="ne PlayerA", matched_player="ne PlayerA",
+            points_recipient="ne PlayerA", match_score=100.0, match_source="players"
+        )
+        persistence.save_race(
+            war_id=war_id_1, race_number=1, image_path="test.jpg",
+            json_path="test.json", scoreboard_rows=[row], db_path=self.db_path
+        )
+        persistence.save_race(
+            war_id=war_id_2, race_number=1, image_path="test.jpg",
+            json_path="test.json", scoreboard_rows=[row], db_path=self.db_path
+        )
+
+        self.assertEqual(len(persistence.list_wars(db_path=self.db_path)), 3)
+
+        success = persistence.delete_wars([war_id_1, war_id_2], db_path=self.db_path)
+        self.assertTrue(success)
+
+        remaining = persistence.list_wars(db_path=self.db_path)
+        self.assertEqual(len(remaining), 1)
+        self.assertEqual(remaining[0]["name"], "War C")
+
+    def test_delete_wars_returns_false_if_any_not_found(self):
+        """Deleting wars with a non-existent ID should return False and delete nothing."""
+        war_id_1 = persistence.get_or_create_war("War A", db_path=self.db_path)
+        war_id_2 = persistence.get_or_create_war("War B", db_path=self.db_path)
+
+        success = persistence.delete_wars([war_id_1, 9999], db_path=self.db_path)
+        self.assertFalse(success)
+
+        # Nothing should be deleted (atomic)
+        self.assertEqual(len(persistence.list_wars(db_path=self.db_path)), 2)
+
+    def test_delete_wars_empty_list(self):
+        """Deleting an empty list should return True and do nothing."""
+        success = persistence.delete_wars([], db_path=self.db_path)
+        self.assertTrue(success)
+        self.assertEqual(len(persistence.list_wars(db_path=self.db_path)), 0)
+
     def test_reset_db(self):
         """Resetting the DB should remove all data but preserve the file and schema."""
         war_id = persistence.get_or_create_war("War 1", db_path=self.db_path)
