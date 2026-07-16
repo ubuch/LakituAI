@@ -17,10 +17,10 @@ from lakituai import logic, ocr, persistence, war_manager
 
 def parse_arguments() -> argparse.Namespace:
     """Parse and return command-line arguments.
-    
+
     Returns:
         Parsed arguments with 'image_path' and war management options.
-    
+
     Raises:
         SystemExit: If required arguments are missing or invalid.
     """
@@ -36,10 +36,10 @@ def parse_arguments() -> argparse.Namespace:
             "  python -m lakituai --delete-wars 1 2 3"
         ),
     )
-    
+
     # War management (mutually exclusive with image_path)
     group = parser.add_mutually_exclusive_group()
-    
+
     group.add_argument(
         "image_path",
         nargs="?",
@@ -47,33 +47,33 @@ def parse_arguments() -> argparse.Namespace:
         default=None,
         help="Path to the scoreboard screenshot image (JPEG, PNG, etc.)",
     )
-    
+
     group.add_argument(
         "--list-wars",
         action="store_true",
         help="List all wars with details (races, teams, date)",
     )
-    
+
     group.add_argument(
         "--delete-war",
         type=int,
         metavar="ID",
         help="Delete a war by ID (use --list-wars to see IDs)",
     )
-    
+
     group.add_argument(
         "--delete-wars",
         nargs="+",
         metavar="ID",
         help="Delete multiple wars by ID (e.g., --delete-wars 1 2 3)",
     )
-    
+
     group.add_argument(
         "--reset-db",
         action="store_true",
         help="Reset the database: drop all tables and recreate schema (preserves file)",
     )
-    
+
     # War selection (only with image_path)
     parser.add_argument(
         "--war",
@@ -83,7 +83,7 @@ def parse_arguments() -> argparse.Namespace:
         help="War name (defaults to current war)",
         dest="war",
     )
-    
+
     args = parser.parse_args()
     if (
         args.image_path is None
@@ -101,32 +101,32 @@ def parse_arguments() -> argparse.Namespace:
 
 def validate_image_path(image_path: str) -> Path:
     """Validate that the image path exists and is a file.
-    
+
     Args:
         image_path: String path to the image file.
-    
+
     Returns:
         Validated Path object.
-    
+
     Raises:
         FileNotFoundError: If file doesn't exist or is a directory.
         ValueError: If file extension is not a common image format.
     """
     path = Path(image_path).resolve()
-    
+
     if not path.exists():
         raise FileNotFoundError(f"Image file not found: {image_path}")
-    
+
     if not path.is_file():
         raise ValueError(f"Path is not a file: {image_path}")
-    
+
     valid_extensions = {".jpg", ".jpeg", ".png", ".bmp", ".gif", ".webp"}
     if path.suffix.lower() not in valid_extensions:
         raise ValueError(
             f"Unsupported image format: {path.suffix}. "
             f"Supported formats: {', '.join(valid_extensions)}"
         )
-    
+
     return path
 
 
@@ -166,7 +166,11 @@ def process_scoreboard(image_path: Path, war_name: str = "Default") -> None:
         print("\nSCOREBOARD RESULTS:")
         print("-" * 80)
         for row in scoreboard_rows:
-            row_type = "BOT" if row.is_bot else "MISSING" if row.is_missing_player else "PLAYER"
+            row_type = (
+                "BOT"
+                if row.is_bot
+                else "MISSING" if row.is_missing_player else "PLAYER"
+            )
             print(
                 f"ROW {row.row_number:2d} [{row_type:7s}]: {row.ocr_text:20s} -> "
                 f"{row.normalized_text:20s} -> {row.matched_player:15s} || "
@@ -180,7 +184,8 @@ def process_scoreboard(image_path: Path, war_name: str = "Default") -> None:
 
         # Determine race number by parsing existing race filenames
         import re
-        existing = list(results_dir.glob('race_*.json'))
+
+        existing = list(results_dir.glob("race_*.json"))
         max_n = 0
         for p in existing:
             m = re.match(r"race_(\d+)_", p.name)
@@ -195,19 +200,23 @@ def process_scoreboard(image_path: Path, war_name: str = "Default") -> None:
 
         # Derive team tags from standings
         team_keys = list(logic.build_team_points(scoreboard_rows).keys())
-        tag1 = team_keys[0] if len(team_keys) >= 1 else 'teamA'
-        tag2 = team_keys[1] if len(team_keys) >= 2 else ('teamB' if len(team_keys) == 1 else 'teamA')
+        tag1 = team_keys[0] if len(team_keys) >= 1 else "teamA"
+        tag2 = (
+            team_keys[1]
+            if len(team_keys) >= 2
+            else ("teamB" if len(team_keys) == 1 else "teamA")
+        )
 
         # Sanitize tags for filenames
         def _sanitize(s: str) -> str:
-            s = str(s).replace(' ', '_')
-            return re.sub(r'[^A-Za-z0-9_\-]', '', s)
+            s = str(s).replace(" ", "_")
+            return re.sub(r"[^A-Za-z0-9_\-]", "", s)
 
-        tag1_s = _sanitize(tag1) or 'teamA'
-        tag2_s = _sanitize(tag2) or 'teamB'
+        tag1_s = _sanitize(tag1) or "teamA"
+        tag2_s = _sanitize(tag2) or "teamB"
 
         # Save race JSON
-        date_str = datetime.utcnow().strftime('%Y_%m_%d')
+        date_str = datetime.utcnow().strftime("%Y_%m_%d")
         json_filename = f"race_{race_number}_{tag1_s}-{tag2_s}_{date_str}.json"
         json_path = results_dir / json_filename
 
@@ -222,18 +231,20 @@ def process_scoreboard(image_path: Path, war_name: str = "Default") -> None:
         }
 
         for row in scoreboard_rows:
-            race_json["rows"].append({
-                "row_number": row.row_number,
-                "ocr_text": row.ocr_text,
-                "normalized_text": row.normalized_text,
-                "matched_player": row.matched_player,
-                "points_recipient": row.points_recipient,
-                "points": row.points,
-                "match_score": row.match_score,
-                "match_source": row.match_source,
-                "is_bot": row.is_bot,
-                "is_missing_player": row.is_missing_player,
-            })
+            race_json["rows"].append(
+                {
+                    "row_number": row.row_number,
+                    "ocr_text": row.ocr_text,
+                    "normalized_text": row.normalized_text,
+                    "matched_player": row.matched_player,
+                    "points_recipient": row.points_recipient,
+                    "points": row.points,
+                    "match_score": row.match_score,
+                    "match_source": row.match_source,
+                    "is_bot": row.is_bot,
+                    "is_missing_player": row.is_missing_player,
+                }
+            )
 
         with open(json_path, "w", encoding="utf-8") as f:
             json.dump(race_json, f, ensure_ascii=False, indent=2)
@@ -283,22 +294,22 @@ def list_wars_cmd() -> None:
     """List all wars with metadata."""
     persistence.init_db()
     wars = persistence.list_wars()
-    
+
     if not wars:
         print("No wars found.")
         return
-    
+
     print("\n" + "=" * 100)
     print("WARS")
     print("=" * 100)
-    
+
     for t in wars:
         teams_str = ", ".join(t["teams"]) if t["teams"] else "—"
         print(f"\nID #{t['war_id']}: {t['name']}")
         print(f"  Created: {t['created_at']}")
         print(f"  Races: {t['races_count']}")
         print(f"  Teams: {teams_str}")
-    
+
     print("\n" + "=" * 100)
 
 
@@ -346,10 +357,14 @@ def reset_db_cmd() -> None:
     total_races = sum(w["races_count"] for w in wars)
     total_wars = len(wars)
 
-    response = input(
-        f"\nThis will DELETE all data: {total_wars} war(s), {total_races} race(s). "
-        "The database file will be preserved but emptied. (yes/no): "
-    ).strip().lower()
+    response = (
+        input(
+            f"\nThis will DELETE all data: {total_wars} war(s), {total_races} race(s). "
+            "The database file will be preserved but emptied. (yes/no): "
+        )
+        .strip()
+        .lower()
+    )
 
     if response != "yes":
         print("Reset cancelled.")
@@ -363,31 +378,31 @@ def main() -> None:
     """Main CLI entry point."""
     try:
         args = parse_arguments()
-        
+
         # Handle war management commands
         if args.list_wars:
             list_wars_cmd()
             return
-        
+
         if args.delete_war is not None:
             delete_war_cmd(args.delete_war)
             return
-        
+
         if args.delete_wars is not None:
             delete_wars_cmd([int(x) for x in args.delete_wars])
             return
-        
+
         if args.reset_db:
             reset_db_cmd()
             return
-        
+
         # Handle image processing
         if args.image_path is None:
             print("ERROR: Image path required (or use --list-wars, --delete-war)")
             sys.exit(1)
-        
+
         image_path = validate_image_path(args.image_path)
-        
+
         # Determine war to use
         war_name = args.war
         if war_name is None:
@@ -395,7 +410,7 @@ def main() -> None:
         else:
             # Update current war if specified
             war_manager.set_current_war(war_name)
-            
+
         # Check if the war has reached the limit of races and auto-rollover if needed
         persistence.init_db()
         war_id = persistence.get_war_by_name(war_name)
@@ -404,7 +419,7 @@ def main() -> None:
             if races_played >= logic.RACES_PER_WAR:
                 existing_wars = persistence.list_wars()
                 existing_names = [w["name"] for w in existing_wars]
-                
+
                 # Naming strategy: increment number if name ends with number, else find next available War N
                 match = re.match(r"^(.*?)\s*(\d+)$", war_name)
                 if match:
@@ -421,13 +436,15 @@ def main() -> None:
                     while new_war_name in existing_names:
                         num += 1
                         new_war_name = f"{base} {num}"
-                        
-                print(f"\nAutomatic rollover: Current war '{war_name}' reached the limit of {logic.RACES_PER_WAR} races.")
+
+                print(
+                    f"\nAutomatic rollover: Current war '{war_name}' reached the limit of {logic.RACES_PER_WAR} races."
+                )
                 print(f"Automatically switching to a new war: '{new_war_name}'")
-                
+
                 war_manager.set_current_war(new_war_name)
                 war_name = new_war_name
-        
+
         process_scoreboard(image_path, war_name)
     except (FileNotFoundError, ValueError) as e:
         print(f"ERROR: {e}", file=sys.stderr)

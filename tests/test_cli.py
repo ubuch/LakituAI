@@ -98,18 +98,25 @@ class CLIRolloverTests(unittest.TestCase):
     @mock.patch("lakituai.persistence.get_races_played")
     @mock.patch("lakituai.persistence.list_wars")
     def test_main_does_not_rollover_when_races_below_limit(
-        self, mock_list_wars, mock_get_races, mock_get_war_name, mock_init_db,
-        mock_set_war, mock_load_war, mock_validate_img, mock_process
+        self,
+        mock_list_wars,
+        mock_get_races,
+        mock_get_war_name,
+        mock_init_db,
+        mock_set_war,
+        mock_load_war,
+        mock_validate_img,
+        mock_process,
     ):
         """Should not rollover when races played is below the limit."""
         mock_load_war.return_value = "War 1"
         mock_get_war_name.return_value = 1
         mock_get_races.return_value = 5  # below default 12 limit
         mock_validate_img.return_value = Path("test.jpg")
-        
+
         with mock.patch("sys.argv", ["prog", "test.jpg"]):
             lakitu_ai.main()
-            
+
         mock_process.assert_called_once_with(Path("test.jpg"), "War 1")
         mock_set_war.assert_not_called()
 
@@ -122,8 +129,15 @@ class CLIRolloverTests(unittest.TestCase):
     @mock.patch("lakituai.persistence.get_races_played")
     @mock.patch("lakituai.persistence.list_wars")
     def test_main_rollover_when_limit_reached(
-        self, mock_list_wars, mock_get_races, mock_get_war_name, mock_init_db,
-        mock_set_war, mock_load_war, mock_validate_img, mock_process
+        self,
+        mock_list_wars,
+        mock_get_races,
+        mock_get_war_name,
+        mock_init_db,
+        mock_set_war,
+        mock_load_war,
+        mock_validate_img,
+        mock_process,
     ):
         """Should rollover to a new war when races played reaches the limit."""
         mock_load_war.return_value = "War 1"
@@ -131,10 +145,10 @@ class CLIRolloverTests(unittest.TestCase):
         mock_get_races.return_value = 12  # at default 12 limit
         mock_list_wars.return_value = [{"war_id": 1, "name": "War 1"}]
         mock_validate_img.return_value = Path("test.jpg")
-        
+
         with mock.patch("sys.argv", ["prog", "test.jpg"]):
             lakitu_ai.main()
-            
+
         mock_set_war.assert_called_once_with("War 2")
         mock_process.assert_called_once_with(Path("test.jpg"), "War 2")
 

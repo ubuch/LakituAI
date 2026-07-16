@@ -11,16 +11,15 @@ from typing import Optional
 
 from lakituai import logic
 
-
 DB_PATH = logic.RESOURCES_DIR / "wars.db"
 
 
 def init_db(db_path: Path = DB_PATH) -> None:
     """Initialize database schema if it doesn't exist.
-    
+
     Creates tables for wars, races, race results, and standings.
     Safe to call multiple times (uses CREATE TABLE IF NOT EXISTS).
-    
+
     Args:
         db_path: Path to SQLite database file.
     """
@@ -100,11 +99,11 @@ def get_or_create_war(
     db_path: Path = DB_PATH,
 ) -> int:
     """Get or create a war and return its ID.
-    
+
     Args:
         war_name: Name of the war.
         db_path: Path to SQLite database.
-    
+
     Returns:
         War ID.
     """
@@ -137,9 +136,9 @@ def save_race(
     db_path: Path = DB_PATH,
 ) -> int:
     """Save a race and its results to database.
-    
+
     Inserts the race metadata and all player results for that race.
-    
+
     Args:
         war_id: ID of the war.
         race_number: Sequential race number.
@@ -147,7 +146,7 @@ def save_race(
         json_path: Path to the saved race JSON.
         scoreboard_rows: List of ScoreboardRowResult objects.
         db_path: Path to SQLite database.
-    
+
     Returns:
         ID of the inserted race.
     """
@@ -186,10 +185,10 @@ def update_standings(
     db_path: Path = DB_PATH,
 ) -> None:
     """Update player and team standings after a new race.
-    
+
     Adds race points to existing standings or creates new rows if player/team
     hasn't participated before. Increments races_played counter.
-    
+
     Args:
         war_id: ID of the war.
         scoreboard_rows: List of ScoreboardRowResult objects from the race.
@@ -254,11 +253,11 @@ def get_player_standings(
     db_path: Path = DB_PATH,
 ) -> dict[str, int]:
     """Get cumulative player points for a war.
-    
+
     Args:
         war_id: ID of the war.
         db_path: Path to SQLite database.
-    
+
     Returns:
         Dict mapping player name to total points, sorted by points descending.
     """
@@ -284,11 +283,11 @@ def get_team_standings(
     db_path: Path = DB_PATH,
 ) -> dict[str, int]:
     """Get cumulative team points for a war.
-    
+
     Args:
         war_id: ID of the war.
         db_path: Path to SQLite database.
-    
+
     Returns:
         Dict mapping team tag to total points, sorted by points descending.
     """
@@ -314,14 +313,14 @@ def get_races_played(
     db_path: Path = DB_PATH,
 ) -> int:
     """Get total number of races played in a war.
-    
+
     Uses the races_played count from any player (all players should have same count).
     Falls back to counting rows in races table if available.
-    
+
     Args:
         war_id: ID of the war.
         db_path: Path to SQLite database.
-    
+
     Returns:
         Number of races.
     """
@@ -356,10 +355,10 @@ def get_races_played(
 
 def list_wars(db_path: Path = DB_PATH) -> list[dict]:
     """List all wars with metadata.
-    
+
     Args:
        db_path: Path to SQLite database.
-    
+
     Returns:
        List of dicts with war_id, name, created_at, races_count, teams.
     """
@@ -380,28 +379,30 @@ def list_wars(db_path: Path = DB_PATH) -> list[dict]:
        GROUP BY t.id
        ORDER BY t.created_at DESC
     """)
-    
+
     results = []
     for row in cursor.fetchall():
-       results.append({
-           "war_id": row["id"],
-           "name": row["name"],
-           "created_at": row["created_at"],
-           "races_count": row["races_count"] or 0,
-           "teams": row["teams"].split(",") if row["teams"] else []
-       })
-    
+        results.append(
+            {
+                "war_id": row["id"],
+                "name": row["name"],
+                "created_at": row["created_at"],
+                "races_count": row["races_count"] or 0,
+                "teams": row["teams"].split(",") if row["teams"] else [],
+            }
+        )
+
     conn.close()
     return results
 
 
 def delete_war(war_id: int, db_path: Path = DB_PATH) -> bool:
     """Delete a war and all its associated data (cascade).
-    
+
     Args:
        war_id: ID of war to delete.
        db_path: Path to SQLite database.
-    
+
     Returns:
        True if deletion succeeded, False if war not found.
     """
@@ -410,14 +411,14 @@ def delete_war(war_id: int, db_path: Path = DB_PATH) -> bool:
 
 def delete_wars(war_ids: list[int], db_path: Path = DB_PATH) -> bool:
     """Delete multiple wars and all their associated data (cascade) in one transaction.
-    
+
     Designed for future UI multi-select deletion. All deletions happen
     atomically: if any error occurs, nothing is committed.
-    
+
     Args:
         war_ids: List of war IDs to delete.
         db_path: Path to SQLite database.
-    
+
     Returns:
         True if all deletions succeeded, False if any war not found.
     """
@@ -454,11 +455,11 @@ def delete_wars(war_ids: list[int], db_path: Path = DB_PATH) -> bool:
 
 def get_war_by_name(name: str, db_path: Path = DB_PATH) -> Optional[int]:
     """Get war ID by name.
-    
+
     Args:
        name: War name to search for.
        db_path: Path to SQLite database.
-    
+
     Returns:
        War ID if found, None otherwise.
     """
@@ -474,11 +475,11 @@ def get_war_by_name(name: str, db_path: Path = DB_PATH) -> Optional[int]:
 
 def reset_db(db_path: Path = DB_PATH) -> None:
     """Reset the database by dropping all tables and recreating the schema.
-    
+
     This preserves the database file but removes all data and recreates
     the tables from scratch. Equivalent to deleting and reinitializing
     the database without touching the file system.
-    
+
     Args:
         db_path: Path to SQLite database.
     """
@@ -495,4 +496,3 @@ def reset_db(db_path: Path = DB_PATH) -> None:
     conn.close()
 
     init_db(db_path)
-

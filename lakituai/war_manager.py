@@ -7,13 +7,12 @@ and providing a simple interface for war management.
 import json
 from pathlib import Path
 
-
 WAR_CONFIG_PATH = Path(__file__).parent.parent / "config" / "current_war.json"
 
 
 def load_current_war() -> str:
     """Load the current war name from config.
-    
+
     Returns:
         War name; defaults to "Default" if config doesn't exist.
     """
@@ -24,18 +23,18 @@ def load_current_war() -> str:
                 return data.get("current_war", "Default")
     except Exception:
         pass
-    
+
     return "Default"
 
 
 def set_current_war(name: str) -> None:
     """Set the current war name in config.
-    
+
     Args:
         name: War name to set as current.
     """
     WAR_CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
-    
+
     data = {"current_war": name}
     with open(WAR_CONFIG_PATH, "w") as f:
         json.dump(data, f, indent=2)
@@ -43,11 +42,11 @@ def set_current_war(name: str) -> None:
 
 def get_war_display_name(war_id: int, war_name: str) -> str:
     """Get a nice display name for a war.
-    
+
     Args:
         war_id: Database ID of war.
         war_name: Name of war.
-    
+
     Returns:
         Formatted display name (e.g., "#1: War Name").
     """

@@ -51,7 +51,9 @@ class LogicTests(unittest.TestCase):
         players = [f"RK Player{i}" for i in range(1, 7)] + [
             f"ne.Player{i}" for i in range(7, 13)
         ]
-        ocr_results = [(position, player) for position, player in enumerate(players[:11], 1)]
+        ocr_results = [
+            (position, player) for position, player in enumerate(players[:11], 1)
+        ]
 
         rows = logic.build_scoreboard_results(ocr_results, players)
         missing_row = rows[-1]
@@ -89,16 +91,22 @@ class LogicTests(unittest.TestCase):
         )
         logic.add_race_to_standings(race_2, standings, players, team_tags)
 
-        self.assertEqual(standings.player_points, {
-            "RK Alpha": 25,
-            "β-Ray": 27,
-            "ne.COOK": 22,
-        })
-        self.assertEqual(standings.team_points, {
-            "RK": 25,
-            "β": 27,
-            "ne": 22,
-        })
+        self.assertEqual(
+            standings.player_points,
+            {
+                "RK Alpha": 25,
+                "β-Ray": 27,
+                "ne.COOK": 22,
+            },
+        )
+        self.assertEqual(
+            standings.team_points,
+            {
+                "RK": 25,
+                "β": 27,
+                "ne": 22,
+            },
+        )
         self.assertEqual(standings.races_played, 2)
 
 
@@ -174,7 +182,9 @@ class PlayerManagementTests(unittest.TestCase):
         )
 
         self.assertFalse(success)
-        self.assertNotIn("NoTeamPlayer", player_management.get_players(self.players_path))
+        self.assertNotIn(
+            "NoTeamPlayer", player_management.get_players(self.players_path)
+        )
 
     def test_add_duplicate_player_fails(self):
         """Adding an already existing player should fail."""
@@ -195,7 +205,9 @@ class PlayerManagementTests(unittest.TestCase):
         )
 
         self.assertTrue(success)
-        self.assertNotIn("RK ToRemove", player_management.get_players(self.players_path))
+        self.assertNotIn(
+            "RK ToRemove", player_management.get_players(self.players_path)
+        )
 
     def test_remove_nonexistent_player_fails(self):
         """Removing a non-existent player should fail."""

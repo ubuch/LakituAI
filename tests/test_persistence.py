@@ -39,7 +39,7 @@ class PersistenceTests(unittest.TestCase):
     def test_get_war_by_name(self):
         """Retrieving war by name should return the war ID or None if not found."""
         war_id = persistence.get_or_create_war("My War", db_path=self.db_path)
-        
+
         found_id = persistence.get_war_by_name("My War", db_path=self.db_path)
         self.assertEqual(found_id, war_id)
 
@@ -49,7 +49,7 @@ class PersistenceTests(unittest.TestCase):
     def test_save_race_and_results(self):
         """Saving a race and its results should store correct records in DB."""
         war_id = persistence.get_or_create_war("War 1", db_path=self.db_path)
-        
+
         row1 = logic.ScoreboardRowResult(
             row_number=1,
             points=15,
@@ -58,7 +58,7 @@ class PersistenceTests(unittest.TestCase):
             matched_player="Player A",
             points_recipient="Player A",
             match_score=100.0,
-            match_source="players"
+            match_source="players",
         )
         row2 = logic.ScoreboardRowResult(
             row_number=2,
@@ -68,16 +68,16 @@ class PersistenceTests(unittest.TestCase):
             matched_player="Player B",
             points_recipient="Player B",
             match_score=100.0,
-            match_source="players"
+            match_source="players",
         )
-        
+
         race_id = persistence.save_race(
             war_id=war_id,
             race_number=1,
             image_path="test.jpg",
             json_path="test.json",
             scoreboard_rows=[row1, row2],
-            db_path=self.db_path
+            db_path=self.db_path,
         )
         self.assertGreater(race_id, 0)
 
@@ -88,7 +88,7 @@ class PersistenceTests(unittest.TestCase):
     def test_update_standings_and_get_standings(self):
         """Updating standings should aggregate player and team points correctly."""
         war_id = persistence.get_or_create_war("War 1", db_path=self.db_path)
-        
+
         row1 = logic.ScoreboardRowResult(
             row_number=1,
             points=15,
@@ -97,7 +97,7 @@ class PersistenceTests(unittest.TestCase):
             matched_player="ne PlayerA",
             points_recipient="ne PlayerA",
             match_score=100.0,
-            match_source="players"
+            match_source="players",
         )
         row2 = logic.ScoreboardRowResult(
             row_number=2,
@@ -107,14 +107,18 @@ class PersistenceTests(unittest.TestCase):
             matched_player="RK PlayerB",
             points_recipient="RK PlayerB",
             match_score=100.0,
-            match_source="players"
+            match_source="players",
         )
-        
+
         team_tags = ("ne", "RK")
-        persistence.update_standings(war_id, [row1, row2], team_tags=team_tags, db_path=self.db_path)
+        persistence.update_standings(
+            war_id, [row1, row2], team_tags=team_tags, db_path=self.db_path
+        )
 
         # Get player standings
-        player_standings = persistence.get_player_standings(war_id, db_path=self.db_path)
+        player_standings = persistence.get_player_standings(
+            war_id, db_path=self.db_path
+        )
         self.assertEqual(len(player_standings), 2)
         self.assertIn("ne PlayerA", player_standings)
         self.assertEqual(player_standings["ne PlayerA"], 15)
@@ -132,7 +136,7 @@ class PersistenceTests(unittest.TestCase):
 
         wars = persistence.list_wars(db_path=self.db_path)
         self.assertEqual(len(wars), 2)
-        
+
         names = [w["name"] for w in wars]
         self.assertIn("War A", names)
         self.assertIn("War B", names)
@@ -140,7 +144,7 @@ class PersistenceTests(unittest.TestCase):
     def test_delete_war(self):
         """Deleting a war should remove it and all related data (cascade delete)."""
         war_id = persistence.get_or_create_war("War to Delete", db_path=self.db_path)
-        
+
         row = logic.ScoreboardRowResult(
             row_number=1,
             points=15,
@@ -149,18 +153,20 @@ class PersistenceTests(unittest.TestCase):
             matched_player="ne PlayerA",
             points_recipient="ne PlayerA",
             match_score=100.0,
-            match_source="players"
+            match_source="players",
         )
-        
+
         persistence.save_race(
             war_id=war_id,
             race_number=1,
             image_path="test.jpg",
             json_path="test.json",
             scoreboard_rows=[row],
-            db_path=self.db_path
+            db_path=self.db_path,
         )
-        persistence.update_standings(war_id, [row], team_tags=("ne",), db_path=self.db_path)
+        persistence.update_standings(
+            war_id, [row], team_tags=("ne",), db_path=self.db_path
+        )
 
         # Verify exists
         self.assertEqual(len(persistence.list_wars(db_path=self.db_path)), 1)
@@ -179,17 +185,30 @@ class PersistenceTests(unittest.TestCase):
         war_id_3 = persistence.get_or_create_war("War C", db_path=self.db_path)
 
         row = logic.ScoreboardRowResult(
-            row_number=1, points=15, ocr_text="ne PlayerA",
-            normalized_text="ne PlayerA", matched_player="ne PlayerA",
-            points_recipient="ne PlayerA", match_score=100.0, match_source="players"
+            row_number=1,
+            points=15,
+            ocr_text="ne PlayerA",
+            normalized_text="ne PlayerA",
+            matched_player="ne PlayerA",
+            points_recipient="ne PlayerA",
+            match_score=100.0,
+            match_source="players",
         )
         persistence.save_race(
-            war_id=war_id_1, race_number=1, image_path="test.jpg",
-            json_path="test.json", scoreboard_rows=[row], db_path=self.db_path
+            war_id=war_id_1,
+            race_number=1,
+            image_path="test.jpg",
+            json_path="test.json",
+            scoreboard_rows=[row],
+            db_path=self.db_path,
         )
         persistence.save_race(
-            war_id=war_id_2, race_number=1, image_path="test.jpg",
-            json_path="test.json", scoreboard_rows=[row], db_path=self.db_path
+            war_id=war_id_2,
+            race_number=1,
+            image_path="test.jpg",
+            json_path="test.json",
+            scoreboard_rows=[row],
+            db_path=self.db_path,
         )
 
         self.assertEqual(len(persistence.list_wars(db_path=self.db_path)), 3)
@@ -221,7 +240,7 @@ class PersistenceTests(unittest.TestCase):
     def test_reset_db(self):
         """Resetting the DB should remove all data but preserve the file and schema."""
         war_id = persistence.get_or_create_war("War 1", db_path=self.db_path)
-        
+
         row = logic.ScoreboardRowResult(
             row_number=1,
             points=15,
@@ -230,18 +249,20 @@ class PersistenceTests(unittest.TestCase):
             matched_player="ne PlayerA",
             points_recipient="ne PlayerA",
             match_score=100.0,
-            match_source="players"
+            match_source="players",
         )
-        
+
         persistence.save_race(
             war_id=war_id,
             race_number=1,
             image_path="test.jpg",
             json_path="test.json",
             scoreboard_rows=[row],
-            db_path=self.db_path
+            db_path=self.db_path,
         )
-        persistence.update_standings(war_id, [row], team_tags=("ne",), db_path=self.db_path)
+        persistence.update_standings(
+            war_id, [row], team_tags=("ne",), db_path=self.db_path
+        )
 
         # Verify data exists
         self.assertEqual(len(persistence.list_wars(db_path=self.db_path)), 1)

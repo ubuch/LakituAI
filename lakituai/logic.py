@@ -145,7 +145,9 @@ def extract_team_tag(player_name, team_tags=TEAM_TAGS):
     """Extract a team tag when it appears at the start or end of a player name."""
 
     normalized_player = normalize_text(player_name)
-    sorted_tags = sorted(team_tags, key=lambda tag: len(normalize_text(tag)), reverse=True)
+    sorted_tags = sorted(
+        team_tags, key=lambda tag: len(normalize_text(tag)), reverse=True
+    )
 
     for team_tag in sorted_tags:
         normalized_tag = normalize_text(team_tag)
@@ -181,7 +183,9 @@ def is_bot_name(normalized_name, bot_names=BOT_NAMES):
     if len(normalized_name) < shortest_bot_name:
         return False
 
-    match = process.extractOne(normalized_name, normalized_bot_names, scorer=fuzz.WRatio)
+    match = process.extractOne(
+        normalized_name, normalized_bot_names, scorer=fuzz.WRatio
+    )
     return match is not None and match[1] >= BOT_MATCH_THRESHOLD
 
 
@@ -235,7 +239,10 @@ def fuzzy_match(
         previous_ocr_match = _best_previous_ocr_match(
             normalized_name, ocr_to_player_names, excluded_players
         )
-        if previous_ocr_match is not None and previous_ocr_match.score > best_match.score:
+        if (
+            previous_ocr_match is not None
+            and previous_ocr_match.score > best_match.score
+        ):
             best_match = previous_ocr_match
 
     return best_match
@@ -409,7 +416,9 @@ def add_race_to_standings(
         standings = WarStandings()
 
     for player, points in build_player_points(scoreboard_rows).items():
-        standings.player_points[player] = standings.player_points.get(player, 0) + points
+        standings.player_points[player] = (
+            standings.player_points.get(player, 0) + points
+        )
 
     for team, points in build_team_points(scoreboard_rows, team_tags).items():
         standings.team_points[team] = standings.team_points.get(team, 0) + points
