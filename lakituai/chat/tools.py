@@ -25,6 +25,52 @@ def list_players() -> str:
     return f"Players ({len(cfg.players)}):\n" + "\n".join(lines)
 
 
+def list_team_tags() -> str:
+    """List all registered team tags."""
+    cfg = config.load_config()
+    if not cfg.team_tags:
+        return "No team tags configured. Use add_team_tag to add tags first."
+
+    return f"Team tags ({len(cfg.team_tags)}): {', '.join(cfg.team_tags)}"
+
+
+def add_team_tag(tag: str) -> str:
+    """Add a new team tag.
+
+    Team tags are short identifiers prefixed or suffixed to player names
+    (e.g., 'RK', 'ne'). Must be configured before adding players.
+
+    Args:
+        tag: Team tag to add (e.g., 'RK', 'ne')
+    """
+    cfg = config.load_config()
+
+    if tag in cfg.team_tags:
+        return f"Team tag '{tag}' already exists."
+
+    updated_tags = list(cfg.team_tags) + [tag]
+    cfg.team_tags = updated_tags
+    config.save_config(cfg)
+    return f"Team tag '{tag}' added. Current tags: {', '.join(cfg.team_tags)}"
+
+
+def remove_team_tag(tag: str) -> str:
+    """Remove a team tag.
+
+    Args:
+        tag: Team tag to remove exactly as it appears (e.g., 'RK', 'ne')
+    """
+    cfg = config.load_config()
+
+    if tag not in cfg.team_tags:
+        return f"Team tag '{tag}' not found."
+
+    updated_tags = [t for t in cfg.team_tags if t != tag]
+    cfg.team_tags = updated_tags
+    config.save_config(cfg)
+    return f"Team tag '{tag}' removed. Current tags: {', '.join(cfg.team_tags) if cfg.team_tags else '(none)'}"
+
+
 def add_player(name: str, team_tag: str) -> str:
     """Add a new player to the roster.
 
@@ -202,6 +248,9 @@ ALL_TOOLS = [
     list_players,
     add_player,
     remove_player,
+    list_team_tags,
+    add_team_tag,
+    remove_team_tag,
     get_standings,
     get_race_details,
     list_wars,
