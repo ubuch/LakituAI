@@ -26,6 +26,12 @@ dist/
 .env.*
 !.env.example
 
+# User-specific config (not version controlled)
+config/current_war.json
+config/players.json
+config/team_tags.json
+config/settings.json
+
 # Notebooks
 .ipynb_checkpoints/
 
@@ -41,7 +47,6 @@ temp/
 outputs/
 
 # Resources (generated/user input, not version controlled)
-config/current_war.json
 resources/results
 resources/rows
 resources/scoreboards
