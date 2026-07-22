@@ -35,7 +35,7 @@ Always show results in a clear, readable format.
 Be concise but helpful. Respond in the same language the user writes in.
 """
 
-MODEL = "qwen2.5-coder:7b"
+MODEL = "qwen3:4b"
 
 
 def _execute_tool(tool_call: Any) -> str:
