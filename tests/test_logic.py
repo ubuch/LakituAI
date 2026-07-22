@@ -125,26 +125,31 @@ class ConfigTests(unittest.TestCase):
         cfg = config.load_config(
             self.temp_path / "missing_bots.json",
             self.temp_path / "missing_players.json",
+            self.temp_path / "missing_team_tags.json",
         )
 
         self.assertEqual(cfg.bots, config.DEFAULT_BOTS)
-        self.assertEqual(cfg.players, config.DEFAULT_PLAYERS)
+        self.assertEqual(cfg.players, [])
+        self.assertEqual(cfg.team_tags, [])
 
     def test_save_and_load_config_preserves_data(self):
         """Saving and loading should preserve configuration."""
         bots_path = self.temp_path / "bots.json"
         players_path = self.temp_path / "players.json"
+        team_tags_path = self.temp_path / "team_tags.json"
 
         original_cfg = config.GameConfig(
             bots=["Mario", "Luigi"],
             players=["RK Player1", "ne.Player2"],
+            team_tags=["RK", "ne"],
         )
-        config.save_config(original_cfg, bots_path, players_path)
+        config.save_config(original_cfg, bots_path, players_path, team_tags_path)
 
-        loaded_cfg = config.load_config(bots_path, players_path)
+        loaded_cfg = config.load_config(bots_path, players_path, team_tags_path)
 
         self.assertEqual(loaded_cfg.bots, ["Mario", "Luigi"])
         self.assertEqual(loaded_cfg.players, ["RK Player1", "ne.Player2"])
+        self.assertEqual(loaded_cfg.team_tags, ["RK", "ne"])
 
 
 class PlayerManagementTests(unittest.TestCase):
@@ -154,10 +159,12 @@ class PlayerManagementTests(unittest.TestCase):
         self.temp_path = Path(self.temp_dir.name)
         self.players_path = self.temp_path / "players.json"
         self.bots_path = self.temp_path / "bots.json"
+        self.team_tags_path = self.temp_path / "team_tags.json"
 
-        # Initialize with default configs
-        config.save_json_list(self.players_path, config.DEFAULT_PLAYERS)
+        # Initialize with test configs
+        config.save_json_list(self.players_path, ["RK Existing", "ne.Existing"])
         config.save_json_list(self.bots_path, config.DEFAULT_BOTS)
+        config.save_json_list(self.team_tags_path, ["RK", "ne"])
 
     def tearDown(self):
         """Clean up temporary directories."""

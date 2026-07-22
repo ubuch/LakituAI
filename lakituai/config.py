@@ -13,6 +13,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 CONFIG_DIR = PROJECT_ROOT / "config"
 BOTS_CONFIG_PATH = CONFIG_DIR / "bots.json"
 PLAYERS_CONFIG_PATH = CONFIG_DIR / "players.json"
+TEAM_TAGS_CONFIG_PATH = CONFIG_DIR / "team_tags.json"
 
 
 DEFAULT_BOTS = (
@@ -99,23 +100,6 @@ DEFAULT_BOTS = (
     "Placapum",
 )
 
-DEFAULT_PLAYERS = (
-    "RK AxeeL",
-    "ne.ths",
-    "RK ivanchu",
-    "ne.LOLmdr",
-    "RK Aketx",
-    "ne.popoff",
-    "ne.crr",
-    "RK Kevo",
-    "ne.KIRIO",
-    "RK jonz",
-    "ne.starlow",
-    "RK César",
-)
-
-DEFAULT_TEAM_TAGS = ("RK", "ne")
-
 DEFAULT_POINTS_BY_POSITION = (15, 12, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1)
 
 
@@ -133,8 +117,8 @@ class GameConfig:
     """
 
     bots: Sequence[str] = field(default_factory=lambda: DEFAULT_BOTS)
-    players: Sequence[str] = field(default_factory=lambda: DEFAULT_PLAYERS)
-    team_tags: Sequence[str] = field(default_factory=lambda: DEFAULT_TEAM_TAGS)
+    players: Sequence[str] = field(default_factory=list)
+    team_tags: Sequence[str] = field(default_factory=list)
     points_by_position: tuple[int, ...] = field(
         default_factory=lambda: DEFAULT_POINTS_BY_POSITION
     )
@@ -170,24 +154,27 @@ def save_json_list(path: Path, items: Sequence[str]) -> None:
 def load_config(
     bots_path: Path = BOTS_CONFIG_PATH,
     players_path: Path = PLAYERS_CONFIG_PATH,
+    team_tags_path: Path = TEAM_TAGS_CONFIG_PATH,
     rules_path: Path = RULES_CONFIG_PATH,
 ) -> GameConfig:
-    """Load configuration from JSON files with built-in defaults as fallback.
+    """Load configuration from JSON files.
 
-    Attempts to load bots and players from JSON config files. If files don't exist
-    or are invalid, uses the hardcoded defaults. Team tags and scoring rules are
-    always set to defaults.
+    Loads bots, players, and team tags from their respective JSON config files.
+    Bots fall back to hardcoded defaults if the file is missing.
+    Players and team tags default to empty lists if files are missing.
 
     Args:
         bots_path: Path to JSON file containing bot character names.
         players_path: Path to JSON file containing player names.
+        team_tags_path: Path to JSON file containing team tag identifiers.
         rules_path: Path to JSON file containing rules settings.
 
     Returns:
         GameConfig instance with loaded or default values.
     """
     bots = load_json_list(bots_path, DEFAULT_BOTS)
-    players = load_json_list(players_path, DEFAULT_PLAYERS)
+    players = load_json_list(players_path, [])
+    team_tags = load_json_list(team_tags_path, [])
 
     races_per_war = 12
     if rules_path.exists():
@@ -201,7 +188,7 @@ def load_config(
     return GameConfig(
         bots=bots,
         players=players,
-        team_tags=DEFAULT_TEAM_TAGS,
+        team_tags=team_tags,
         points_by_position=DEFAULT_POINTS_BY_POSITION,
         races_per_war=races_per_war,
     )
@@ -211,6 +198,7 @@ def save_config(
     config: GameConfig,
     bots_path: Path = BOTS_CONFIG_PATH,
     players_path: Path = PLAYERS_CONFIG_PATH,
+    team_tags_path: Path = TEAM_TAGS_CONFIG_PATH,
     rules_path: Path = RULES_CONFIG_PATH,
 ) -> None:
     """Save current configuration to JSON files.
@@ -219,10 +207,12 @@ def save_config(
         config: GameConfig instance to save.
         bots_path: Path where bot names will be saved.
         players_path: Path where player names will be saved.
+        team_tags_path: Path where team tags will be saved.
         rules_path: Path where rules settings will be saved.
     """
     save_json_list(bots_path, config.bots)
     save_json_list(players_path, config.players)
+    save_json_list(team_tags_path, config.team_tags)
 
     rules_path.parent.mkdir(parents=True, exist_ok=True)
     try:
@@ -235,10 +225,11 @@ def save_config(
 def create_default_config_files() -> None:
     """Create default configuration JSON files in the config directory.
 
-    Useful for first-time setup or to reset to defaults.
+    Creates bots.json with hardcoded defaults and team_tags.json with empty list.
+    Players.json is not created with defaults — it must be configured by the user.
     """
     save_json_list(BOTS_CONFIG_PATH, DEFAULT_BOTS)
-    save_json_list(PLAYERS_CONFIG_PATH, DEFAULT_PLAYERS)
+    save_json_list(TEAM_TAGS_CONFIG_PATH, [])
 
 
 def extract_team_tag_from_game_config(
