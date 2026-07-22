@@ -13,19 +13,21 @@ from lakituai import config
 def add_player(
     player_name: str,
     players_path: Path = config.PLAYERS_CONFIG_PATH,
+    team_tags_path: Path = config.TEAM_TAGS_CONFIG_PATH,
 ) -> tuple[bool, str]:
     """Add a new player to the active players list.
 
     Args:
         player_name: Name of the player to add (should include team tag).
         players_path: Path to the players configuration file.
+        team_tags_path: Path to the team tags configuration file.
 
     Returns:
         Tuple of (success: bool, message: str)
         - True if player was added
         - False if player already exists or validation fails
     """
-    cfg = config.load_config(players_path=players_path)
+    cfg = config.load_config(players_path=players_path, team_tags_path=team_tags_path)
 
     if player_name in cfg.players:
         return False, f"Player '{player_name}' already exists."
@@ -39,7 +41,9 @@ def add_player(
 
     updated_players = list(cfg.players) + [player_name]
     cfg.players = updated_players
-    config.save_config(cfg, players_path=players_path)
+    config.save_config(
+        cfg, players_path=players_path, team_tags_path=team_tags_path
+    )
 
     return True, f"Player '{player_name}' added successfully."
 
@@ -47,42 +51,48 @@ def add_player(
 def remove_player(
     player_name: str,
     players_path: Path = config.PLAYERS_CONFIG_PATH,
+    team_tags_path: Path = config.TEAM_TAGS_CONFIG_PATH,
 ) -> tuple[bool, str]:
     """Remove a player from the active players list.
 
     Args:
         player_name: Name of the player to remove.
         players_path: Path to the players configuration file.
+        team_tags_path: Path to the team tags configuration file.
 
     Returns:
         Tuple of (success: bool, message: str)
         - True if player was removed
         - False if player doesn't exist
     """
-    cfg = config.load_config(players_path=players_path)
+    cfg = config.load_config(players_path=players_path, team_tags_path=team_tags_path)
 
     if player_name not in cfg.players:
         return False, f"Player '{player_name}' not found."
 
     updated_players = [p for p in cfg.players if p != player_name]
     cfg.players = updated_players
-    config.save_config(cfg, players_path=players_path)
+    config.save_config(
+        cfg, players_path=players_path, team_tags_path=team_tags_path
+    )
 
     return True, f"Player '{player_name}' removed successfully."
 
 
 def get_players(
     players_path: Path = config.PLAYERS_CONFIG_PATH,
+    team_tags_path: Path = config.TEAM_TAGS_CONFIG_PATH,
 ) -> Sequence[str]:
     """Get the current list of active players.
 
     Args:
         players_path: Path to the players configuration file.
+        team_tags_path: Path to the team tags configuration file.
 
     Returns:
         Sequence of player names.
     """
-    cfg = config.load_config(players_path=players_path)
+    cfg = config.load_config(players_path=players_path, team_tags_path=team_tags_path)
     return cfg.players
 
 

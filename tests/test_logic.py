@@ -175,10 +175,11 @@ class PlayerManagementTests(unittest.TestCase):
         success, msg = player_management.add_player(
             "RK NewPlayer",
             self.players_path,
+            self.team_tags_path,
         )
 
         self.assertTrue(success)
-        players = player_management.get_players(self.players_path)
+        players = player_management.get_players(self.players_path, self.team_tags_path)
         self.assertIn("RK NewPlayer", players)
 
     def test_add_player_without_team_tag_fails(self):
@@ -186,34 +187,43 @@ class PlayerManagementTests(unittest.TestCase):
         success, msg = player_management.add_player(
             "NoTeamPlayer",
             self.players_path,
+            self.team_tags_path,
         )
 
         self.assertFalse(success)
         self.assertNotIn(
-            "NoTeamPlayer", player_management.get_players(self.players_path)
+            "NoTeamPlayer",
+            player_management.get_players(self.players_path, self.team_tags_path),
         )
 
     def test_add_duplicate_player_fails(self):
         """Adding an already existing player should fail."""
-        player_management.add_player("RK NewPlayer", self.players_path)
+        player_management.add_player(
+            "RK NewPlayer", self.players_path, self.team_tags_path
+        )
         success, msg = player_management.add_player(
             "RK NewPlayer",
             self.players_path,
+            self.team_tags_path,
         )
 
         self.assertFalse(success)
 
     def test_remove_player_succeeds(self):
         """Removing an existing player should succeed."""
-        player_management.add_player("RK ToRemove", self.players_path)
+        player_management.add_player(
+            "RK ToRemove", self.players_path, self.team_tags_path
+        )
         success, msg = player_management.remove_player(
             "RK ToRemove",
             self.players_path,
+            self.team_tags_path,
         )
 
         self.assertTrue(success)
         self.assertNotIn(
-            "RK ToRemove", player_management.get_players(self.players_path)
+            "RK ToRemove",
+            player_management.get_players(self.players_path, self.team_tags_path),
         )
 
     def test_remove_nonexistent_player_fails(self):
@@ -221,6 +231,7 @@ class PlayerManagementTests(unittest.TestCase):
         success, msg = player_management.remove_player(
             "RK NonExistent",
             self.players_path,
+            self.team_tags_path,
         )
 
         self.assertFalse(success)

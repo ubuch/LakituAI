@@ -33,7 +33,8 @@ def parse_arguments() -> argparse.Namespace:
             "  python -m lakituai --war 'War 1' path/to/screenshot.jpg\n"
             "  python -m lakituai --list-wars\n"
             "  python -m lakituai --delete-war 2\n"
-            "  python -m lakituai --delete-wars 1 2 3"
+            "  python -m lakituai --delete-wars 1 2 3\n"
+            "  python -m lakituai --chat"
         ),
     )
 
@@ -74,6 +75,12 @@ def parse_arguments() -> argparse.Namespace:
         help="Reset the database: drop all tables and recreate schema (preserves file)",
     )
 
+    group.add_argument(
+        "--chat",
+        action="store_true",
+        help="Start interactive AI chat session (requires Ollama)",
+    )
+
     # War selection (only with image_path)
     parser.add_argument(
         "--war",
@@ -91,10 +98,11 @@ def parse_arguments() -> argparse.Namespace:
         and args.delete_war is None
         and not args.delete_wars
         and not args.reset_db
+        and not args.chat
     ):
         parser.error(
             "Image path required "
-            "(or use --list-wars, --delete-war, --delete-wars, --reset-db)"
+            "(or use --list-wars, --delete-war, --delete-wars, --reset-db, --chat)"
         )
     return args
 
@@ -350,6 +358,13 @@ def delete_wars_cmd(war_ids: list[int]) -> None:
         sys.exit(1)
 
 
+def chat_cmd() -> None:
+    """Start the interactive AI chat session."""
+    from lakituai.chat.agents import run_chat
+
+    run_chat()
+
+
 def reset_db_cmd() -> None:
     """Reset the database by dropping all tables and recreating schema."""
     persistence.init_db()
@@ -394,6 +409,10 @@ def main() -> None:
 
         if args.reset_db:
             reset_db_cmd()
+            return
+
+        if args.chat:
+            chat_cmd()
             return
 
         # Handle image processing
