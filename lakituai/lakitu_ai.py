@@ -12,7 +12,7 @@ import re
 from datetime import datetime
 from pathlib import Path
 
-from lakituai import logic, ocr, persistence, war_manager
+from lakituai import logic, persistence, war_manager
 
 
 def parse_arguments() -> argparse.Namespace:
@@ -199,6 +199,8 @@ def process_scoreboard(image_path: Path, war_name: str = "Default") -> None:
         war_id = persistence.get_or_create_war(war_name)
 
         # Process image through OCR pipeline
+        from lakituai import ocr
+
         row_paths = logic.prepare_scoreboard_rows(image_path)
         print(f"Extracted {len(row_paths)} scoreboard rows")
 
