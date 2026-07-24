@@ -34,6 +34,10 @@ def parse_arguments() -> argparse.Namespace:
             "  python -m lakituai --list-wars\n"
             "  python -m lakituai --delete-war 2\n"
             "  python -m lakituai --delete-wars 1 2 3\n"
+            "  python -m lakituai --list-players\n"
+            "  python -m lakituai --add-player 'RK AxeeL'\n"
+            "  python -m lakituai --list-team-tags\n"
+            "  python -m lakituai --add-team-tag RK\n"
             "  python -m lakituai --chat"
         ),
     )
@@ -81,6 +85,32 @@ def parse_arguments() -> argparse.Namespace:
         help="Start interactive AI chat session (requires Ollama)",
     )
 
+    group.add_argument(
+        "--list-players",
+        action="store_true",
+        help="List all registered players",
+    )
+
+    group.add_argument(
+        "--add-player",
+        type=str,
+        metavar="NAME",
+        help="Add a player (e.g., --add-player 'RK AxeeL')",
+    )
+
+    group.add_argument(
+        "--list-team-tags",
+        action="store_true",
+        help="List all registered team tags",
+    )
+
+    group.add_argument(
+        "--add-team-tag",
+        type=str,
+        metavar="TAG",
+        help="Add a team tag (e.g., --add-team-tag RK)",
+    )
+
     # War selection (only with image_path)
     parser.add_argument(
         "--war",
@@ -99,10 +129,15 @@ def parse_arguments() -> argparse.Namespace:
         and not args.delete_wars
         and not args.reset_db
         and not args.chat
+        and not args.list_players
+        and args.add_player is None
+        and not args.list_team_tags
+        and args.add_team_tag is None
     ):
         parser.error(
             "Image path required "
-            "(or use --list-wars, --delete-war, --delete-wars, --reset-db, --chat)"
+            "(or use --list-wars, --delete-war, --delete-wars, --reset-db, "
+            "--chat, --list-players, --add-player, --list-team-tags, --add-team-tag)"
         )
     return args
 
@@ -365,6 +400,67 @@ def chat_cmd() -> None:
     run_chat()
 
 
+def list_players_cmd() -> None:
+    """List all registered players."""
+    from lakituai import player_management
+
+    players = player_management.get_players()
+    if not players:
+        print("No players registered.")
+        print("Use --add-player 'NAME' to add players.")
+        return
+
+    print("\nREGISTERED PLAYERS:")
+    print("-" * 40)
+    for player in players:
+        print(f"  {player}")
+    print(f"\nTotal: {len(players)}")
+
+
+def add_player_cmd(name: str) -> None:
+    """Add a player."""
+    from lakituai import player_management
+
+    success, msg = player_management.add_player(name)
+    if success:
+        print(f"✓ {msg}")
+    else:
+        print(f"ERROR: {msg}")
+        sys.exit(1)
+
+
+def list_team_tags_cmd() -> None:
+    """List all registered team tags."""
+    from lakituai import config
+
+    cfg = config.load_config()
+    if not cfg.team_tags:
+        print("No team tags configured.")
+        print("Use --add-team-tag TAG to add tags.")
+        return
+
+    print("\nTEAM TAGS:")
+    print("-" * 40)
+    for tag in cfg.team_tags:
+        print(f"  {tag}")
+    print(f"\nTotal: {len(cfg.team_tags)}")
+
+
+def add_team_tag_cmd(tag: str) -> None:
+    """Add a team tag."""
+    from lakituai import config
+
+    cfg = config.load_config()
+    if tag in cfg.team_tags:
+        print(f"Team tag '{tag}' already exists.")
+        return
+
+    updated_tags = list(cfg.team_tags) + [tag]
+    cfg.team_tags = updated_tags
+    config.save_config(cfg)
+    print(f"✓ Team tag '{tag}' added. Current tags: {', '.join(cfg.team_tags)}")
+
+
 def reset_db_cmd() -> None:
     """Reset the database by dropping all tables and recreating schema."""
     persistence.init_db()
@@ -413,6 +509,22 @@ def main() -> None:
 
         if args.chat:
             chat_cmd()
+            return
+
+        if args.list_players:
+            list_players_cmd()
+            return
+
+        if args.add_player is not None:
+            add_player_cmd(args.add_player)
+            return
+
+        if args.list_team_tags:
+            list_team_tags_cmd()
+            return
+
+        if args.add_team_tag is not None:
+            add_team_tag_cmd(args.add_team_tag)
             return
 
         # Handle image processing
