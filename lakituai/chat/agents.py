@@ -35,6 +35,14 @@ Always show results in a clear, readable format.
 Be concise but helpful. Respond in the same language the user writes in.
 """
 
+# Model selection: We tested qwen3:1.7b (1.4GB, fast
+# but poor tool calling and conversation quality),
+# and qwen3:4b (2.5GB, best balance for our hardware).
+#
+# qwen3:4b requires ~6GB VRAM for optimal performance (model + KV cache).
+# With less VRAM, Ollama offloads layers to CPU, slowing inference.
+# On a 4GB GPU (e.g., RTX 3050 Ti), expect slower responses.
+# For best experience, use a GPU with 6GB+ VRAM.
 MODEL = "qwen3:4b"
 
 
