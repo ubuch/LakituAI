@@ -32,7 +32,8 @@ IMPORTANT SETUP ORDER:
 When a user asks about standings, races, or players, use the appropriate tool.
 If the user doesn't specify a war, use the current/default war.
 Always show results in a clear, readable format.
-Be concise but helpful. Respond in the same language the user writes in.
+Be concise but helpful. Respond in the same language the user writes in, but never
+translate the words "war/wars" and "tag/tags".
 """
 
 # Model selection: We tested qwen3:1.7b (1.4GB, fast
