@@ -412,6 +412,7 @@ def delete_war(war_id: int, db_path: Path = DB_PATH) -> bool:
 def delete_wars(war_ids: list[int], db_path: Path = DB_PATH) -> bool:
     """Delete multiple wars and all their associated data (cascade) in one transaction.
 
+    Deletes DB records and associated race JSON files from disk.
     Designed for future UI multi-select deletion. All deletions happen
     atomically: if any error occurs, nothing is committed.
 
@@ -437,6 +438,16 @@ def delete_wars(war_ids: list[int], db_path: Path = DB_PATH) -> bool:
         conn.close()
         return False
 
+    # Collect JSON paths before deleting
+    json_paths = []
+    for war_id in war_ids:
+        cursor.execute(
+            "SELECT json_path FROM races WHERE war_id = ? AND json_path IS NOT NULL",
+            (war_id,),
+        )
+        for row in cursor.fetchall():
+            json_paths.append(row[0])
+
     for war_id in war_ids:
         cursor.execute(
             "DELETE FROM race_results WHERE race_id IN "
@@ -450,6 +461,13 @@ def delete_wars(war_ids: list[int], db_path: Path = DB_PATH) -> bool:
 
     conn.commit()
     conn.close()
+
+    # Delete race JSON files from disk
+    for json_path_str in json_paths:
+        json_file = Path(json_path_str)
+        if json_file.exists():
+            json_file.unlink()
+
     return True
 
 
