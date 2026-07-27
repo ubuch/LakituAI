@@ -175,6 +175,100 @@ def get_race_details(race_number: int, war_name: Optional[str] = None) -> str:
     return "\n".join(lines)
 
 
+def get_race_position(race_number: int, position: int, war_name: Optional[str] = None) -> str:
+    """Find who finished in a specific position in a specific race.
+
+    Args:
+        race_number: Race number within the war (1-based).
+        position: Position to look up (1-12).
+        war_name: War name. Uses current war if not specified.
+    """
+    persistence.init_db()
+
+    if war_name is None:
+        war_name = war_manager.load_current_war()
+
+    war_id = persistence.get_war_by_name(war_name)
+    if war_id is None:
+        return f"War '{war_name}' not found."
+
+    conn = sqlite3.connect(str(persistence.DB_PATH))
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
+
+    cursor.execute(
+        "SELECT id FROM races WHERE war_id = ? AND race_number = ?",
+        (war_id, race_number),
+    )
+    race = cursor.fetchone()
+    if not race:
+        conn.close()
+        return f"Race #{race_number} not found in war '{war_name}'."
+
+    cursor.execute(
+        """
+        SELECT player_name, points
+        FROM race_results
+        WHERE race_id = ? AND position = ?
+        """,
+        (race["id"], position),
+    )
+    result = cursor.fetchone()
+    conn.close()
+
+    if not result:
+        return f"No result found for position {position} in race #{race_number}."
+
+    return f"Race #{race_number} in war '{war_name}' — P{position}: {result['player_name']} ({result['points']} pts)"
+
+
+def get_player_race_result(player_name: str, race_number: int, war_name: Optional[str] = None) -> str:
+    """Find what position a player finished in a specific race.
+
+    Args:
+        player_name: Player name exactly as it appears (e.g., 'RK AxeeL').
+        race_number: Race number within the war (1-based).
+        war_name: War name. Uses current war if not specified.
+    """
+    persistence.init_db()
+
+    if war_name is None:
+        war_name = war_manager.load_current_war()
+
+    war_id = persistence.get_war_by_name(war_name)
+    if war_id is None:
+        return f"War '{war_name}' not found."
+
+    conn = sqlite3.connect(str(persistence.DB_PATH))
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
+
+    cursor.execute(
+        "SELECT id FROM races WHERE war_id = ? AND race_number = ?",
+        (war_id, race_number),
+    )
+    race = cursor.fetchone()
+    if not race:
+        conn.close()
+        return f"Race #{race_number} not found in war '{war_name}'."
+
+    cursor.execute(
+        """
+        SELECT position, points
+        FROM race_results
+        WHERE race_id = ? AND player_name = ?
+        """,
+        (race["id"], player_name),
+    )
+    result = cursor.fetchone()
+    conn.close()
+
+    if not result:
+        return f"No result found for '{player_name}' in race #{race_number}."
+
+    return f"{player_name} finished P{result['position']} in race #{race_number} ({result['points']} pts)"
+
+
 def list_wars() -> str:
     """List all wars with their metadata (teams, races, date)."""
     persistence.init_db()
@@ -253,6 +347,8 @@ ALL_TOOLS = [
     remove_team_tag,
     get_standings,
     get_race_details,
+    get_race_position,
+    get_player_race_result,
     list_wars,
     get_player_history,
 ]
