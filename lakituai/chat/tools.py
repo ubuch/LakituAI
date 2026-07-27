@@ -413,10 +413,387 @@ def get_player_history(player_name: str) -> str:
     return "\n".join(lines)
 
 
+def edit_player(old_name: str, new_name: str) -> str:
+    """Rename a player everywhere (config JSON and database).
+
+    Args:
+        old_name: Current player name (e.g., 'RK César'). Supports flexible matching.
+        new_name: New player name (e.g., 'RK Césarito'). Must include team tag.
+    """
+    resolved = resolve_player_name(old_name)
+    if not resolved:
+        return f"Player '{old_name}' not found."
+
+    cfg = config.load_config()
+    if resolved not in cfg.players:
+        return f"Player '{resolved}' not found in config."
+
+    if new_name == resolved:
+        return f"New name is the same as current name ('{resolved}')."
+
+    if new_name in cfg.players:
+        return f"Player '{new_name}' already exists."
+
+    # Update config
+    updated_players = [new_name if p == resolved else p for p in cfg.players]
+    cfg.players = updated_players
+    config.save_config(cfg)
+
+    # Update DB
+    persistence.init_db()
+    conn = sqlite3.connect(str(persistence.DB_PATH))
+    cursor = conn.cursor()
+    cursor.execute(
+        "UPDATE race_results SET player_name = ? WHERE player_name = ?",
+        (new_name, resolved),
+    )
+    cursor.execute(
+        "UPDATE player_standings SET player_name = ? WHERE player_name = ?",
+        (new_name, resolved),
+    )
+    conn.commit()
+    conn.close()
+
+    return f"Renamed '{resolved}' -> '{new_name}' (config + database updated)."
+
+
+def get_player_stats(player_name: str, war_name: Optional[str] = None) -> str:
+    """Get aggregate stats for a player: avg position, total points, best/worst race.
+
+    Args:
+        player_name: Player name (flexible matching).
+        war_name: War name. Uses current war if not specified.
+    """
+    resolved = resolve_player_name(player_name)
+    if not resolved:
+        return f"Player '{player_name}' not found."
+
+    persistence.init_db()
+
+    if war_name is None:
+        war_name = war_manager.load_current_war()
+
+    war_id = persistence.get_war_by_name(war_name)
+    if war_id is None:
+        return f"War '{war_name}' not found."
+
+    conn = sqlite3.connect(str(persistence.DB_PATH))
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
+
+    cursor.execute(
+        """
+        SELECT r.race_number, rr.position, rr.points
+        FROM race_results rr
+        JOIN races r ON rr.race_id = r.id
+        WHERE r.war_id = ? AND rr.player_name = ?
+        ORDER BY r.race_number
+        """,
+        (war_id, resolved),
+    )
+    rows = cursor.fetchall()
+    conn.close()
+
+    if not rows:
+        return f"No results found for '{resolved}' in war '{war_name}'."
+
+    positions = [row["position"] for row in rows]
+    points = [row["points"] for row in rows]
+    avg_pos = sum(positions) / len(positions)
+    total_pts = sum(points)
+    best = min(rows, key=lambda r: r["position"])
+    worst = max(rows, key=lambda r: r["position"])
+
+    lines = [
+        f"Stats for {resolved} in war '{war_name}':",
+        f"  Races played: {len(rows)}",
+        f"  Total points: {total_pts}",
+        f"  Avg position: {avg_pos:.1f}",
+        f"  Best race:    P{best['position']} in race #{best['race_number']} ({best['points']} pts)",
+        f"  Worst race:   P{worst['position']} in race #{worst['race_number']} ({worst['points']} pts)",
+    ]
+
+    return "\n".join(lines)
+
+
+def get_team_stats(team_tag: str, war_name: Optional[str] = None) -> str:
+    """Get aggregate stats for a team: total points, avg per race, top/bottom player.
+
+    Args:
+        team_tag: Team tag (e.g., 'RK', 'ne').
+        war_name: War name. Uses current war if not specified.
+    """
+    persistence.init_db()
+
+    if war_name is None:
+        war_name = war_manager.load_current_war()
+
+    war_id = persistence.get_war_by_name(war_name)
+    if war_id is None:
+        return f"War '{war_name}' not found."
+
+    cfg = config.load_config()
+
+    conn = sqlite3.connect(str(persistence.DB_PATH))
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
+
+    # Get team total from team_standings
+    cursor.execute(
+        "SELECT total_points, races_played FROM team_standings WHERE war_id = ? AND team_tag = ?",
+        (war_id, team_tag),
+    )
+    team_row = cursor.fetchone()
+    if not team_row:
+        conn.close()
+        return f"Team '{team_tag}' not found in war '{war_name}'."
+
+    # Get individual players on this team
+    cursor.execute(
+        """
+        SELECT rr.player_name, SUM(rr.points) as total_pts, COUNT(*) as races,
+               AVG(rr.position) as avg_pos
+        FROM race_results rr
+        JOIN races r ON rr.race_id = r.id
+        WHERE r.war_id = ?
+        GROUP BY rr.player_name
+        """,
+        (war_id,),
+    )
+    all_players = cursor.fetchall()
+    conn.close()
+
+    team_players = []
+    for row in all_players:
+        tag = config.extract_team_tag_from_game_config(row["player_name"], cfg)
+        if tag == team_tag:
+            team_players.append(row)
+
+    if not team_players:
+        return f"No players found for team '{team_tag}' in war '{war_name}'."
+
+    team_players.sort(key=lambda r: r["total_pts"], reverse=True)
+    top = team_players[0]
+    bottom = team_players[-1]
+
+    lines = [
+        f"Team '{team_tag}' stats in war '{war_name}':",
+        f"  Total points: {team_row['total_points']}",
+        f"  Races played: {team_row['races_played']}",
+        f"  Players: {len(team_players)}",
+        f"  Top scorer:   {top['player_name']} ({top['total_pts']} pts, avg P{top['avg_pos']:.1f})",
+        f"  Lowest scorer: {bottom['player_name']} ({bottom['total_pts']} pts, avg P{bottom['avg_pos']:.1f})",
+    ]
+
+    return "\n".join(lines)
+
+
+def compare_players(player1: str, player2: str, war_name: Optional[str] = None) -> str:
+    """Compare two players head-to-head across all races in a war.
+
+    Args:
+        player1: First player name (flexible matching).
+        player2: Second player name (flexible matching).
+        war_name: War name. Uses current war if not specified.
+    """
+    resolved1 = resolve_player_name(player1)
+    resolved2 = resolve_player_name(player2)
+    if not resolved1:
+        return f"Player '{player1}' not found."
+    if not resolved2:
+        return f"Player '{player2}' not found."
+
+    persistence.init_db()
+
+    if war_name is None:
+        war_name = war_manager.load_current_war()
+
+    war_id = persistence.get_war_by_name(war_name)
+    if war_id is None:
+        return f"War '{war_name}' not found."
+
+    conn = sqlite3.connect(str(persistence.DB_PATH))
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
+
+    cursor.execute(
+        """
+        SELECT r.race_number, rr.player_name, rr.position, rr.points
+        FROM race_results rr
+        JOIN races r ON rr.race_id = r.id
+        WHERE r.war_id = ? AND rr.player_name IN (?, ?)
+        ORDER BY r.race_number, rr.position
+        """,
+        (war_id, resolved1, resolved2),
+    )
+    rows = cursor.fetchall()
+    conn.close()
+
+    if not rows:
+        return f"No results found for '{resolved1}' and/or '{resolved2}' in war '{war_name}'."
+
+    # Group by race
+    races = {}
+    for row in rows:
+        rn = row["race_number"]
+        if rn not in races:
+            races[rn] = {}
+        races[rn][row["player_name"]] = row
+
+    p1_wins = 0
+    p2_wins = 0
+    p1_total = 0
+    p2_total = 0
+    lines = [f"Head-to-head: {resolved1} vs {resolved2} in war '{war_name}':", ""]
+
+    for rn in sorted(races.keys()):
+        race = races[rn]
+        if resolved1 in race and resolved2 in race:
+            r1, r2 = race[resolved1], race[resolved2]
+            p1_total += r1["points"]
+            p2_total += r2["points"]
+            if r1["position"] < r2["position"]:
+                winner = resolved1
+                p1_wins += 1
+            elif r2["position"] < r1["position"]:
+                winner = resolved2
+                p2_wins += 1
+            else:
+                winner = "TIE"
+            lines.append(
+                f"  Race {rn}: {resolved1} P{r1['position']} ({r1['points']}pts) vs "
+                f"{resolved2} P{r2['position']} ({r2['points']}pts) -> {winner}"
+            )
+
+    lines.append("")
+    lines.append(f"  {resolved1}: {p1_wins} wins, {p1_total} total pts")
+    lines.append(f"  {resolved2}: {p2_wins} wins, {p2_total} total pts")
+
+    return "\n".join(lines)
+
+
+def get_race_summary(race_number: int, war_name: Optional[str] = None) -> str:
+    """Get a quick summary of a race: winner, closest/biggest gap, notable performances.
+
+    Args:
+        race_number: Race number within the war (1-based).
+        war_name: War name. Uses current war if not specified.
+    """
+    persistence.init_db()
+
+    if war_name is None:
+        war_name = war_manager.load_current_war()
+
+    war_id = persistence.get_war_by_name(war_name)
+    if war_id is None:
+        return f"War '{war_name}' not found."
+
+    conn = sqlite3.connect(str(persistence.DB_PATH))
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
+
+    cursor.execute(
+        "SELECT id FROM races WHERE war_id = ? AND race_number = ?",
+        (war_id, race_number),
+    )
+    race = cursor.fetchone()
+    if not race:
+        conn.close()
+        return f"Race #{race_number} not found in war '{war_name}'."
+
+    cursor.execute(
+        """
+        SELECT player_name, position, points
+        FROM race_results
+        WHERE race_id = ?
+        ORDER BY position
+        """,
+        (race["id"],),
+    )
+    results = cursor.fetchall()
+    conn.close()
+
+    if not results:
+        return f"No results for race #{race_number}."
+
+    winner = results[0]
+    last = results[-1]
+    points_list = [r["points"] for r in results]
+    gap = points_list[0] - points_list[-1] if len(points_list) > 1 else 0
+
+    # Find closest finish (smallest gap between consecutive positions)
+    closest_gap = float("inf")
+    closest_pair = None
+    for i in range(len(results) - 1):
+        g = results[i]["points"] - results[i + 1]["points"]
+        if g < closest_gap:
+            closest_gap = g
+            closest_pair = (results[i], results[i + 1])
+
+    lines = [
+        f"Race #{race_number} summary in war '{war_name}':",
+        f"  Winner: {winner['player_name']} ({winner['points']} pts)",
+        f"  Last place: {last['player_name']} ({last['points']} pts)",
+        f"  Total gap (1st-12th): {gap} pts",
+    ]
+
+    if closest_pair:
+        lines.append(
+            f"  Closest finish: {closest_pair[0]['player_name']} P{closest_pair[0]['position']} "
+            f"vs {closest_pair[1]['player_name']} P{closest_pair[1]['position']} "
+            f"({closest_gap} pts apart)"
+        )
+
+    return "\n".join(lines)
+
+
+def get_quick_summary(war_name: Optional[str] = None) -> str:
+    """Get a quick overview of a war: teams, leader, race count.
+
+    Args:
+        war_name: War name. Uses current war if not specified.
+    """
+    persistence.init_db()
+
+    if war_name is None:
+        war_name = war_manager.load_current_war()
+
+    war_id = persistence.get_war_by_name(war_name)
+    if war_id is None:
+        return f"War '{war_name}' not found."
+
+    races_played = persistence.get_races_played(war_id)
+    player_standings = persistence.get_player_standings(war_id)
+    team_standings = persistence.get_team_standings(war_id)
+
+    if not player_standings:
+        return f"War '{war_name}' has no race data yet."
+
+    leader = max(player_standings, key=player_standings.get)
+    leader_pts = player_standings[leader]
+    total_players = len(player_standings)
+
+    lines = [f"War '{war_name}' summary:", ""]
+
+    # Teams
+    if team_standings:
+        teams_str = " vs ".join(
+            f"{tag}: {pts}pts" for tag, pts in team_standings.items()
+        )
+        lines.append(f"  Teams: {teams_str}")
+
+    lines.append(f"  Races: {races_played}")
+    lines.append(f"  Players: {total_players}")
+    lines.append(f"  Leader: {leader} ({leader_pts} pts)")
+
+    return "\n".join(lines)
+
+
 ALL_TOOLS = [
     list_players,
     add_player,
     remove_player,
+    edit_player,
     list_team_tags,
     add_team_tag,
     remove_team_tag,
@@ -426,4 +803,9 @@ ALL_TOOLS = [
     get_player_race_result,
     list_wars,
     get_player_history,
+    get_player_stats,
+    get_team_stats,
+    compare_players,
+    get_race_summary,
+    get_quick_summary,
 ]
