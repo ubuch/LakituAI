@@ -6,9 +6,76 @@ by the Ollama library to auto-generate JSON schemas for function calling.
 
 import json
 import sqlite3
+import unicodedata
 from typing import Optional
 
 from lakituai import config, persistence, player_management, war_manager
+
+
+def _normalize(name: str) -> str:
+    """Lowercase, strip accents, collapse whitespace."""
+    nfkd = unicodedata.normalize("NFKD", name)
+    no_accents = "".join(c for c in nfkd if not unicodedata.combining(c))
+    return " ".join(no_accents.lower().split())
+
+
+def _strip_tag(name: str, team_tags: list[str]) -> str:
+    """Remove leading team tag from name (e.g., 'RK César' -> 'César')."""
+    for tag in sorted(team_tags, key=len, reverse=True):
+        if name.lower().startswith(tag.lower()):
+            rest = name[len(tag):].lstrip(" .")
+            if rest:
+                return rest
+    return name
+
+
+def resolve_player_name(query: str, db_path: Optional[str] = None) -> Optional[str]:
+    """Resolve a player query to the canonical stored name.
+
+    Matching order:
+      1. Exact match
+      2. Case-insensitive match
+      3. Accent-insensitive + case-insensitive match
+      4. Base name match (tag stripped) against stored base names
+
+    Returns the canonical stored name or None if no match found.
+    """
+    persistence.init_db()
+    conn = sqlite3.connect(str(db_path or persistence.DB_PATH))
+    cursor = conn.cursor()
+    cursor.execute("SELECT DISTINCT player_name FROM race_results")
+    all_names = [row[0] for row in cursor.fetchall()]
+    conn.close()
+
+    if not all_names:
+        return None
+
+    # 1. Exact match
+    for name in all_names:
+        if query == name:
+            return name
+
+    # 2. Case-insensitive
+    q_lower = query.lower()
+    for name in all_names:
+        if q_lower == name.lower():
+            return name
+
+    # 3. Accent-insensitive + case-insensitive
+    q_norm = _normalize(query)
+    for name in all_names:
+        if q_norm == _normalize(name):
+            return name
+
+    # 4. Base name match (strip tags from both sides)
+    cfg = config.load_config()
+    q_base = _normalize(_strip_tag(query, cfg.team_tags))
+    for name in all_names:
+        stored_base = _normalize(_strip_tag(name, cfg.team_tags))
+        if q_base and stored_base and q_base == stored_base:
+            return name
+
+    return None
 
 
 def list_players() -> str:
@@ -226,10 +293,14 @@ def get_player_race_result(player_name: str, race_number: int, war_name: Optiona
     """Find what position a player finished in a specific race.
 
     Args:
-        player_name: Player name exactly as it appears (e.g., 'RK AxeeL').
+        player_name: Player name (e.g., 'RK AxeeL', 'cesar', 'axeel').
         race_number: Race number within the war (1-based).
         war_name: War name. Uses current war if not specified.
     """
+    resolved = resolve_player_name(player_name)
+    if not resolved:
+        return f"Player '{player_name}' not found. Use list_players to see registered players."
+
     persistence.init_db()
 
     if war_name is None:
@@ -258,15 +329,15 @@ def get_player_race_result(player_name: str, race_number: int, war_name: Optiona
         FROM race_results
         WHERE race_id = ? AND player_name = ?
         """,
-        (race["id"], player_name),
+        (race["id"], resolved),
     )
     result = cursor.fetchone()
     conn.close()
 
     if not result:
-        return f"No result found for '{player_name}' in race #{race_number}."
+        return f"'{resolved}' did not participate in race #{race_number}."
 
-    return f"{player_name} finished P{result['position']} in race #{race_number} ({result['points']} pts)"
+    return f"{resolved} finished P{result['position']} in race #{race_number} ({result['points']} pts)"
 
 
 def list_wars() -> str:
@@ -293,8 +364,12 @@ def get_player_history(player_name: str) -> str:
     """Get a player's race-by-race history across all wars.
 
     Args:
-        player_name: Player name exactly as it appears (e.g., 'RK AxeeL')
+        player_name: Player name (e.g., 'RK AxeeL', 'cesar', 'axeel')
     """
+    resolved = resolve_player_name(player_name)
+    if not resolved:
+        return f"Player '{player_name}' not found. Use list_players to see registered players."
+
     persistence.init_db()
 
     conn = sqlite3.connect(str(persistence.DB_PATH))
@@ -310,15 +385,15 @@ def get_player_history(player_name: str) -> str:
         WHERE rr.player_name = ?
         ORDER BY w.name, r.race_number
         """,
-        (player_name,),
+        (resolved,),
     )
     results = cursor.fetchall()
     conn.close()
 
     if not results:
-        return f"No history found for player '{player_name}'."
+        return f"No history found for player '{resolved}'."
 
-    lines = [f"History for {player_name}:", ""]
+    lines = [f"History for {resolved}:", ""]
     current_war = None
     total_points = 0
 
