@@ -129,6 +129,63 @@ class PersistenceTests(unittest.TestCase):
         self.assertIn("ne", team_standings)
         self.assertEqual(team_standings["ne"], 15)
 
+    def test_save_race_stores_team_results(self):
+        """Saving a race should store per-team points and net result."""
+        war_id = persistence.get_or_create_war("War 1", db_path=self.db_path)
+
+        row1 = logic.ScoreboardRowResult(
+            row_number=1, points=15, ocr_text="ne PlayerA",
+            normalized_text="ne PlayerA", matched_player="ne PlayerA",
+            points_recipient="ne PlayerA", match_score=100.0, match_source="players",
+        )
+        row2 = logic.ScoreboardRowResult(
+            row_number=2, points=12, ocr_text="RK PlayerB",
+            normalized_text="RK PlayerB", matched_player="RK PlayerB",
+            points_recipient="RK PlayerB", match_score=100.0, match_source="players",
+        )
+
+        persistence.save_race(
+            war_id=war_id, race_number=1, image_path="test.jpg",
+            json_path="test.json", scoreboard_rows=[row1, row2],
+            db_path=self.db_path, team_tags=("ne", "RK"),
+        )
+
+        conn = persistence.sqlite3.connect(str(self.db_path))
+        conn.row_factory = persistence.sqlite3.Row
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT team_tag, points, net_points FROM team_race_results"
+        )
+        rows = cursor.fetchall()
+        conn.close()
+
+        results = {row["team_tag"]: (row["points"], row["net_points"]) for row in rows}
+        self.assertEqual(results, {"ne": (15, 3), "RK": (12, -3)})
+
+    def test_save_race_without_team_tags_skips_team_results(self):
+        """Races without recognizable team tags should not fail to save."""
+        war_id = persistence.get_or_create_war("War 1", db_path=self.db_path)
+
+        row1 = logic.ScoreboardRowResult(
+            row_number=1, points=15, ocr_text="Player A",
+            normalized_text="Player A", matched_player="Player A",
+            points_recipient="Player A", match_score=100.0, match_source="players",
+        )
+
+        race_id = persistence.save_race(
+            war_id=war_id, race_number=1, image_path="test.jpg",
+            json_path="test.json", scoreboard_rows=[row1],
+            db_path=self.db_path,
+        )
+        self.assertGreater(race_id, 0)
+
+        conn = persistence.sqlite3.connect(str(self.db_path))
+        cursor = conn.cursor()
+        cursor.execute("SELECT COUNT(*) FROM team_race_results")
+        count = cursor.fetchone()[0]
+        conn.close()
+        self.assertEqual(count, 0)
+
     def test_list_wars(self):
         """Listing wars should return all wars with metadata."""
         war_id_1 = persistence.get_or_create_war("War A", db_path=self.db_path)

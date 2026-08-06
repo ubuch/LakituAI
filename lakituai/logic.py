@@ -402,6 +402,29 @@ def build_team_points(scoreboard_rows, team_tags=TEAM_TAGS):
     return points_by_team
 
 
+def build_net_points(team_points):
+    """Compute net points per team vs the best other team.
+
+    For a 1v1 (e.g., RK 42 vs ne 40), the result is RK +2 and ne -2.
+    With more teams, each team's net is its points minus the best
+    points scored by any other team in the race.
+
+    Args:
+        team_points: Dict mapping team tag to race points.
+
+    Returns:
+        Dict mapping team tag to net points.
+    """
+    if len(team_points) < 2:
+        return {team: 0 for team in team_points}
+
+    best_other = {
+        team: max(p for other, p in team_points.items() if other != team)
+        for team in team_points
+    }
+    return {team: pts - best_other[team] for team, pts in team_points.items()}
+
+
 def add_race_to_standings(
     scoreboard_rows,
     standings=None,

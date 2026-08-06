@@ -58,6 +58,16 @@ def _populate_test_db(db_path):
             (war_id, tag, team_pts),
         )
 
+    # Team results for race 1: RK 42 pts (+2), ne 40 pts (-2)
+    cursor.execute(
+        "INSERT INTO team_race_results (race_id, team_tag, points, net_points) VALUES (?, ?, ?, ?)",
+        (race_id, "RK", 42, 2),
+    )
+    cursor.execute(
+        "INSERT INTO team_race_results (race_id, team_tag, points, net_points) VALUES (?, ?, ?, ?)",
+        (race_id, "ne", 40, -2),
+    )
+
     conn.commit()
     conn.close()
     return war_id
@@ -353,6 +363,46 @@ class GetRaceSummaryTests(_BaseToolTest):
         self._patch("lakituai.chat.tools.persistence.get_war_by_name", return_value=None)
         result = tools.get_race_summary(1)
         self.assertIn("not found", result)
+
+
+class GetRaceNetResultTests(_BaseToolTest):
+    """Tests for get_race_net_result tool."""
+
+    def setUp(self):
+        super().setUp()
+        self._patch("lakituai.chat.tools.persistence.DB_PATH", self.db_path)
+        self._patch("lakituai.chat.tools.war_manager.load_current_war", return_value="TestWar")
+        self._patch("lakituai.chat.tools.persistence.get_war_by_name", return_value=self.war_id)
+
+    def test_happy_path(self):
+        result = tools.get_race_net_result(1)
+        self.assertIn("Race #1", result)
+        self.assertIn("RK", result)
+        self.assertIn("42", result)
+        self.assertIn("+2", result)
+        self.assertIn("ne", result)
+        self.assertIn("40", result)
+        self.assertIn("-2", result)
+
+    def test_race_not_found(self):
+        result = tools.get_race_net_result(99)
+        self.assertIn("not found", result)
+
+    def test_war_not_found(self):
+        self._patch("lakituai.chat.tools.persistence.get_war_by_name", return_value=None)
+        result = tools.get_race_net_result(1)
+        self.assertIn("not found", result)
+
+    def test_no_team_data(self):
+        conn = persistence.sqlite3.connect(str(self.db_path))
+        cursor = conn.cursor()
+        cursor.execute("INSERT INTO races (war_id, race_number, json_path) VALUES (?, ?, ?)",
+                       (self.war_id, 2, "/fake/race2.json"))
+        conn.commit()
+        conn.close()
+
+        result = tools.get_race_net_result(2)
+        self.assertIn("No team data", result)
 
 
 class GetQuickSummaryTests(_BaseToolTest):

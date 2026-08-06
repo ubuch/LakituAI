@@ -62,6 +62,19 @@ def init_db(db_path: Path = DB_PATH) -> None:
         )
     """)
 
+    # Team results per race (points + net result vs best other team)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS team_race_results (
+            id INTEGER PRIMARY KEY,
+            race_id INTEGER NOT NULL,
+            team_tag TEXT NOT NULL,
+            points INTEGER NOT NULL,
+            net_points INTEGER NOT NULL,
+            FOREIGN KEY (race_id) REFERENCES races(id),
+            UNIQUE (race_id, team_tag)
+        )
+    """)
+
     # Player standings (cumulative)
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS player_standings (
@@ -134,10 +147,12 @@ def save_race(
     json_path: str,
     scoreboard_rows: list,
     db_path: Path = DB_PATH,
+    team_tags: tuple = None,
 ) -> int:
     """Save a race and its results to database.
 
-    Inserts the race metadata and all player results for that race.
+    Inserts the race metadata, all player results for that race, and the
+    per-team points + net result (points minus best other team).
 
     Args:
         war_id: ID of the war.
@@ -146,10 +161,14 @@ def save_race(
         json_path: Path to the saved race JSON.
         scoreboard_rows: List of ScoreboardRowResult objects.
         db_path: Path to SQLite database.
+        team_tags: Sequence of team tag strings for extraction.
 
     Returns:
         ID of the inserted race.
     """
+    if team_tags is None:
+        team_tags = logic.TEAM_TAGS
+
     conn = sqlite3.connect(str(db_path))
     cursor = conn.cursor()
 
@@ -172,6 +191,22 @@ def save_race(
                 """,
                 (race_id, row.points_recipient, row.points, row.row_number),
             )
+
+    # Store per-team results (points + net vs best other team).
+    # Best-effort: races without team tags skip this without failing.
+    try:
+        team_points = logic.build_team_points(scoreboard_rows, team_tags)
+        net_points = logic.build_net_points(team_points)
+        for team, pts in team_points.items():
+            cursor.execute(
+                """
+                INSERT INTO team_race_results (race_id, team_tag, points, net_points)
+                VALUES (?, ?, ?, ?)
+                """,
+                (race_id, team, pts, net_points.get(team, 0)),
+            )
+    except ValueError:
+        pass
 
     conn.commit()
     conn.close()
@@ -454,6 +489,11 @@ def delete_wars(war_ids: list[int], db_path: Path = DB_PATH) -> bool:
             "(SELECT id FROM races WHERE war_id = ?)",
             (war_id,),
         )
+        cursor.execute(
+            "DELETE FROM team_race_results WHERE race_id IN "
+            "(SELECT id FROM races WHERE war_id = ?)",
+            (war_id,),
+        )
         cursor.execute("DELETE FROM races WHERE war_id = ?", (war_id,))
         cursor.execute("DELETE FROM player_standings WHERE war_id = ?", (war_id,))
         cursor.execute("DELETE FROM team_standings WHERE war_id = ?", (war_id,))
@@ -504,6 +544,7 @@ def reset_db(db_path: Path = DB_PATH) -> None:
     conn = sqlite3.connect(str(db_path))
     cursor = conn.cursor()
 
+    cursor.execute("DROP TABLE IF EXISTS team_race_results")
     cursor.execute("DROP TABLE IF EXISTS race_results")
     cursor.execute("DROP TABLE IF EXISTS races")
     cursor.execute("DROP TABLE IF EXISTS player_standings")

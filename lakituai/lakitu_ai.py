@@ -86,6 +86,12 @@ def parse_arguments() -> argparse.Namespace:
     )
 
     group.add_argument(
+        "--gui",
+        action="store_true",
+        help="Launch desktop GUI",
+    )
+
+    group.add_argument(
         "--list-players",
         action="store_true",
         help="List all registered players",
@@ -129,6 +135,7 @@ def parse_arguments() -> argparse.Namespace:
         and not args.delete_wars
         and not args.reset_db
         and not args.chat
+        and not args.gui
         and not args.list_players
         and args.add_player is None
         and not args.list_team_tags
@@ -137,7 +144,8 @@ def parse_arguments() -> argparse.Namespace:
         parser.error(
             "Image path required "
             "(or use --list-wars, --delete-war, --delete-wars, --reset-db, "
-            "--chat, --list-players, --add-player, --list-team-tags, --add-team-tag)"
+            "--chat, --gui, --list-players, --add-player, "
+            "--list-team-tags, --add-team-tag)"
         )
     return args
 
@@ -265,13 +273,15 @@ def process_scoreboard(image_path: Path, war_name: str = "Default") -> None:
         json_filename = f"race_{race_number}_{tag1_s}-{tag2_s}_{date_str}.json"
         json_path = results_dir / json_filename
 
+        race_team_points = logic.build_team_points(scoreboard_rows)
         race_json = {
             "image_path": str(image_path),
             "generated_at": datetime.utcnow().isoformat() + "Z",
             "rows": [],
             "standings": {
                 "player_points": logic.build_player_points(scoreboard_rows),
-                "team_points": logic.build_team_points(scoreboard_rows),
+                "team_points": race_team_points,
+                "net_points": logic.build_net_points(race_team_points),
             },
         }
 
@@ -402,6 +412,13 @@ def chat_cmd() -> None:
     run_chat()
 
 
+def gui_cmd() -> None:
+    """Launch the desktop GUI."""
+    from lakituai.gui.app import run_gui
+
+    run_gui()
+
+
 def list_players_cmd() -> None:
     """List all registered players."""
     from lakituai import player_management
@@ -511,6 +528,10 @@ def main() -> None:
 
         if args.chat:
             chat_cmd()
+            return
+
+        if args.gui:
+            gui_cmd()
             return
 
         if args.list_players:

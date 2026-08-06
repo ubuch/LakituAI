@@ -25,6 +25,7 @@ You have access to tools that let you query and manage war data:
 - Get team stats (total points, top/bottom player)
 - Compare two players head-to-head
 - Get a quick summary of a race or an entire war
+- Get a race's team result with net points (e.g., 'RK +2', 'ne -2')
 - Browse war history
 
 IMPORTANT SETUP ORDER:
@@ -89,13 +90,75 @@ def _execute_tool(tool_call: Any) -> str:
     return str(result)
 
 
+class ChatSession:
+    """Holds conversation history and answers one message at a time.
+
+    Used by both the REPL (run_chat) and the desktop GUI, so the same
+    tool-calling loop runs everywhere. Not thread-safe: call respond()
+    from a single thread at a time.
+    """
+
+    def __init__(self) -> None:
+        self.messages: list[dict] = [{"role": "system", "content": SYSTEM_PROMPT}]
+
+    def respond(self, user_input: str) -> str:
+        """Send a user message and return the assistant's final reply.
+
+        Runs the tool-calling loop until the model answers without tools.
+        On error, rolls back the conversation to its previous state and
+        re-raises so the caller can show a friendly message.
+
+        Args:
+            user_input: The user's message.
+
+        Returns:
+            The assistant's final text response (may be empty).
+        """
+        start_len = len(self.messages)
+        self.messages.append({"role": "user", "content": user_input})
+
+        try:
+            response: ChatResponse = ollama.chat(
+                model=MODEL,
+                messages=self.messages,
+                tools=ALL_TOOLS,
+            )
+            self.messages.append({"role": "assistant", "content": response.message.content})
+
+            while response.message.tool_calls:
+                for tool_call in response.message.tool_calls:
+                    tool_name = tool_call.function.name
+                    print(f"  [tool: {tool_name}]")
+
+                    result = _execute_tool(tool_call)
+
+                    self.messages.append(
+                        {
+                            "role": "tool",
+                            "content": result,
+                        }
+                    )
+
+                response = ollama.chat(
+                    model=MODEL,
+                    messages=self.messages,
+                    tools=ALL_TOOLS,
+                )
+                self.messages.append({"role": "assistant", "content": response.message.content})
+
+            return response.message.content
+        except Exception:
+            del self.messages[start_len:]
+            raise
+
+
 def run_chat() -> None:
     """Run the interactive chat REPL.
 
     Connects to Ollama, sends user messages with tools, handles tool execution
     loops, and prints responses. Exits on 'exit', 'quit', or Ctrl+C.
     """
-    messages: list[dict] = [{"role": "system", "content": SYSTEM_PROMPT}]
+    session = ChatSession()
 
     print("LakituAI Chat")
     print(f"Model: {MODEL}")
@@ -115,50 +178,15 @@ def run_chat() -> None:
             print("Bye!")
             break
 
-        messages.append({"role": "user", "content": user_input})
-
         try:
-            response: ChatResponse = ollama.chat(
-                model=MODEL,
-                messages=messages,
-                tools=ALL_TOOLS,
-            )
+            content = session.respond(user_input)
         except Exception as e:
             print(f"Error connecting to Ollama: {e}")
             print("Make sure Ollama is running (ollama serve) and the model is pulled.")
-            messages.pop()
             continue
 
-        messages.append({"role": "assistant", "content": response.message.content})
-
-        while response.message.tool_calls:
-            for tool_call in response.message.tool_calls:
-                tool_name = tool_call.function.name
-                print(f"  [tool: {tool_name}]")
-
-                result = _execute_tool(tool_call)
-
-                messages.append(
-                    {
-                        "role": "tool",
-                        "content": result,
-                    }
-                )
-
-            try:
-                response = ollama.chat(
-                    model=MODEL,
-                    messages=messages,
-                    tools=ALL_TOOLS,
-                )
-            except Exception as e:
-                print(f"Error: {e}")
-                break
-
-            messages.append({"role": "assistant", "content": response.message.content})
-
-        if response.message.content:
-            print(f"\nLakituAI> {response.message.content}\n")
+        if content:
+            print(f"\nLakituAI> {content}\n")
 
 
 if __name__ == "__main__":

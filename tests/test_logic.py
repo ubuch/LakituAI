@@ -20,6 +20,24 @@ class LogicTests(unittest.TestCase):
             ["RK", "ne", "β", "β"],
         )
 
+    def test_build_net_points_one_vs_one(self):
+        net = logic.build_net_points({"RK": 42, "ne": 40})
+
+        self.assertEqual(net, {"RK": 2, "ne": -2})
+
+    def test_build_net_points_vs_best_other_team(self):
+        net = logic.build_net_points({"RK": 42, "ne": 40, "FF": 30})
+
+        self.assertEqual(net, {"RK": 2, "ne": -2, "FF": -12})
+
+    def test_build_net_points_single_team_is_zero(self):
+        net = logic.build_net_points({"RK": 42})
+
+        self.assertEqual(net, {"RK": 0})
+
+    def test_build_net_points_empty_is_empty(self):
+        self.assertEqual(logic.build_net_points({}), {})
+
     def test_validate_player_tags_rejects_players_without_team_tags(self):
         with self.assertRaises(ValueError):
             logic.validate_player_tags(["RK AxeeL", "NoTeam"], ("RK", "ne"))

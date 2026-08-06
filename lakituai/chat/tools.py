@@ -747,6 +747,66 @@ def get_race_summary(race_number: int, war_name: Optional[str] = None) -> str:
     return "\n".join(lines)
 
 
+def get_race_net_result(race_number: int, war_name: Optional[str] = None) -> str:
+    """Get the per-team points and net result of a race (e.g., 'RK +2', 'ne -2').
+
+    Net result is each team's points minus the best points scored by any
+    other team in the race.
+
+    Args:
+        race_number: Race number within the war (1-based).
+        war_name: War name. Uses current war if not specified.
+    """
+    persistence.init_db()
+
+    if war_name is None:
+        war_name = war_manager.load_current_war()
+
+    war_id = persistence.get_war_by_name(war_name)
+    if war_id is None:
+        return f"War '{war_name}' not found."
+
+    conn = sqlite3.connect(str(persistence.DB_PATH))
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
+
+    cursor.execute(
+        "SELECT id FROM races WHERE war_id = ? AND race_number = ?",
+        (war_id, race_number),
+    )
+    race = cursor.fetchone()
+    if not race:
+        conn.close()
+        return f"Race #{race_number} not found in war '{war_name}'."
+
+    cursor.execute(
+        """
+        SELECT team_tag, points, net_points
+        FROM team_race_results
+        WHERE race_id = ?
+        ORDER BY points DESC
+        """,
+        (race["id"],),
+    )
+    rows = cursor.fetchall()
+    conn.close()
+
+    if not rows:
+        return (
+            f"No team data for race #{race_number} (the race may have no "
+            "players with team tags)."
+        )
+
+    lines = [f"Race #{race_number} team result in war '{war_name}':", ""]
+    for row in rows:
+        sign = "+" if row["net_points"] >= 0 else ""
+        lines.append(
+            f"  {row['team_tag']:10s}: {row['points']:3d} pts ({sign}{row['net_points']})"
+        )
+
+    return "\n".join(lines)
+
+
 def get_quick_summary(war_name: Optional[str] = None) -> str:
     """Get a quick overview of a war: teams, leader, race count.
 
@@ -807,5 +867,6 @@ ALL_TOOLS = [
     get_team_stats,
     compare_players,
     get_race_summary,
+    get_race_net_result,
     get_quick_summary,
 ]
