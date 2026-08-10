@@ -44,6 +44,7 @@ def init_db(db_path: Path = DB_PATH) -> None:
             race_number INTEGER NOT NULL,
             image_path TEXT,
             json_path TEXT,
+            fingerprint TEXT,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (war_id) REFERENCES war(id)
         )
@@ -148,6 +149,7 @@ def save_race(
     scoreboard_rows: list,
     db_path: Path = DB_PATH,
     team_tags: tuple = None,
+    fingerprint: str = None,
 ) -> int:
     """Save a race and its results to database.
 
@@ -162,6 +164,7 @@ def save_race(
         scoreboard_rows: List of ScoreboardRowResult objects.
         db_path: Path to SQLite database.
         team_tags: Sequence of team tag strings for extraction.
+        fingerprint: Optional stable race fingerprint for rewind detection.
 
     Returns:
         ID of the inserted race.
@@ -174,10 +177,10 @@ def save_race(
 
     cursor.execute(
         """
-        INSERT INTO races (war_id, race_number, image_path, json_path)
-        VALUES (?, ?, ?, ?)
+        INSERT INTO races (war_id, race_number, image_path, json_path, fingerprint)
+        VALUES (?, ?, ?, ?, ?)
         """,
-        (war_id, race_number, image_path, json_path),
+        (war_id, race_number, image_path, json_path, fingerprint),
     )
     race_id = cursor.lastrowid
 
@@ -555,3 +558,194 @@ def reset_db(db_path: Path = DB_PATH) -> None:
     conn.close()
 
     init_db(db_path)
+
+
+def get_race(war_id: int, race_number: int, db_path: Path = DB_PATH) -> Optional[dict]:
+    """Get a single race of a war by its race number.
+
+    Args:
+        war_id: ID of the war.
+        race_number: Sequential race number.
+        db_path: Path to SQLite database.
+
+    Returns:
+        Dict with race_number, image_path, json_path, fingerprint, created_at,
+        or None if the race does not exist.
+    """
+    conn = sqlite3.connect(str(db_path))
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
+
+    cursor.execute(
+        """
+        SELECT id, race_number, image_path, json_path, fingerprint, created_at
+        FROM races
+        WHERE war_id = ? AND race_number = ?
+        """,
+        (war_id, race_number),
+    )
+    row = cursor.fetchone()
+    conn.close()
+
+    if not row:
+        return None
+
+    return {
+        "race_number": row["race_number"],
+        "image_path": row["image_path"],
+        "json_path": row["json_path"],
+        "fingerprint": row["fingerprint"],
+        "created_at": row["created_at"],
+    }
+
+
+def delete_race(war_id: int, race_number: int, db_path: Path = DB_PATH) -> bool:
+    """Delete a single race and recalculate the war standings.
+
+    Deletes the race metadata, its player results and team results, and the
+    associated race JSON file from disk. Standings are rebuilt from the
+    remaining races so cumulative points stay consistent.
+
+    Args:
+        war_id: ID of the war.
+        race_number: Sequential race number to delete.
+        db_path: Path to SQLite database.
+
+    Returns:
+        True if the race was deleted, False if it does not exist.
+    """
+    conn = sqlite3.connect(str(db_path))
+    cursor = conn.cursor()
+
+    cursor.execute(
+        "SELECT id, json_path FROM races WHERE war_id = ? AND race_number = ?",
+        (war_id, race_number),
+    )
+    row = cursor.fetchone()
+    if not row:
+        conn.close()
+        return False
+
+    race_id, json_path = row
+
+    cursor.execute("DELETE FROM race_results WHERE race_id = ?", (race_id,))
+    cursor.execute("DELETE FROM team_race_results WHERE race_id = ?", (race_id,))
+    cursor.execute("DELETE FROM races WHERE id = ?", (race_id,))
+
+    conn.commit()
+    conn.close()
+
+    # Remove associated race JSON from disk, if any
+    if json_path:
+        json_file = Path(json_path)
+        if json_file.exists():
+            json_file.unlink()
+
+    rebuild_standings(war_id, db_path)
+    return True
+
+
+def rebuild_standings(war_id: int, db_path: Path = DB_PATH) -> None:
+    """Recalculate player and team standings for a war from scratch.
+
+    Recomputes cumulative points and races_played from the remaining race
+    results. Called after deleting a race so the cumulative tables reflect
+    exactly the races still in the database.
+
+    Args:
+        war_id: ID of the war.
+        db_path: Path to SQLite database.
+    """
+    conn = sqlite3.connect(str(db_path))
+    cursor = conn.cursor()
+
+    cursor.execute("DELETE FROM player_standings WHERE war_id = ?", (war_id,))
+    cursor.execute("DELETE FROM team_standings WHERE war_id = ?", (war_id,))
+
+    cursor.execute(
+        """
+        SELECT rr.player_name,
+               SUM(rr.points) AS total_points,
+               COUNT(DISTINCT rr.race_id) AS races_played
+        FROM race_results rr
+        JOIN races r ON rr.race_id = r.id
+        WHERE r.war_id = ?
+        GROUP BY rr.player_name
+        """,
+        (war_id,),
+    )
+    for player, points, races in cursor.fetchall():
+        cursor.execute(
+            """
+            INSERT INTO player_standings
+            (war_id, player_name, total_points, races_played)
+            VALUES (?, ?, ?, ?)
+            """,
+            (war_id, player, points, races),
+        )
+
+    cursor.execute(
+        """
+        SELECT tr.team_tag,
+               SUM(tr.points) AS total_points,
+               COUNT(DISTINCT tr.race_id) AS races_played
+        FROM team_race_results tr
+        JOIN races r ON tr.race_id = r.id
+        WHERE r.war_id = ?
+        GROUP BY tr.team_tag
+        """,
+        (war_id,),
+    )
+    for team, points, races in cursor.fetchall():
+        cursor.execute(
+            """
+            INSERT INTO team_standings
+            (war_id, team_tag, total_points, races_played)
+            VALUES (?, ?, ?, ?)
+            """,
+            (war_id, team, points, races),
+        )
+
+    conn.commit()
+    conn.close()
+
+
+def get_last_race(war_id: int, db_path: Path = DB_PATH) -> Optional[dict]:
+    """Get the most recently saved race of a war.
+
+    Used for rewind/duplicate detection: if a new scoreboard has the same
+    fingerprint as this race and arrives shortly after, it is a duplicate.
+
+    Args:
+        war_id: ID of the war.
+        db_path: Path to SQLite database.
+
+    Returns:
+        Dict with race_number, fingerprint, created_at, or None if the war
+        has no races yet.
+    """
+    conn = sqlite3.connect(str(db_path))
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
+
+    cursor.execute(
+        """
+        SELECT id, race_number, fingerprint, created_at
+        FROM races
+        WHERE war_id = ?
+        ORDER BY id DESC
+        LIMIT 1
+        """,
+        (war_id,),
+    )
+    row = cursor.fetchone()
+    conn.close()
+
+    if not row:
+        return None
+
+    return {
+        "race_number": row["race_number"],
+        "fingerprint": row["fingerprint"],
+        "created_at": row["created_at"],
+    }

@@ -425,6 +425,26 @@ def build_net_points(team_points):
     return {team: pts - best_other[team] for team, pts in team_points.items()}
 
 
+def build_race_fingerprint(scoreboard_rows) -> str:
+    """Build a stable fingerprint of a race outcome.
+
+    Two identical scoreboards produce the same fingerprint. It uses the
+    ordered (position, recipient) pairs so a stream rewind (same scoreboard
+    shown again) can be detected cheaply without image analysis.
+
+    Args:
+        scoreboard_rows: List of ScoreboardRowResult objects.
+
+    Returns:
+        String like "1|RK AxeeL;2|ne.ths;...".
+    """
+    entries = []
+    for row in sorted(scoreboard_rows, key=lambda r: r.row_number):
+        if row.points_recipient:
+            entries.append(f"{row.row_number}|{row.points_recipient}")
+    return ";".join(entries)
+
+
 def add_race_to_standings(
     scoreboard_rows,
     standings=None,

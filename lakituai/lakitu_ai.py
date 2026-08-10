@@ -11,8 +11,13 @@ import json
 import re
 from datetime import datetime
 from pathlib import Path
+from typing import Callable, Optional
 
 from lakituai import logic, persistence, war_manager
+
+# A scoreboard identical to the last saved race arriving within this window
+# (seconds) is considered a stream rewind, not a new race.
+DUPLICATE_WINDOW_SECONDS = 90
 
 
 def parse_arguments() -> argparse.Namespace:
@@ -34,6 +39,7 @@ def parse_arguments() -> argparse.Namespace:
             "  python -m lakituai --list-wars\n"
             "  python -m lakituai --delete-war 2\n"
             "  python -m lakituai --delete-wars 1 2 3\n"
+            "  python -m lakituai --delete-race 'War 1' 5\n"
             "  python -m lakituai --list-players\n"
             "  python -m lakituai --add-player 'RK AxeeL'\n"
             "  python -m lakituai --list-team-tags\n"
@@ -71,6 +77,13 @@ def parse_arguments() -> argparse.Namespace:
         nargs="+",
         metavar="ID",
         help="Delete multiple wars by ID (e.g., --delete-wars 1 2 3)",
+    )
+
+    group.add_argument(
+        "--delete-race",
+        nargs=2,
+        metavar=("WAR", "RACE_NUMBER"),
+        help="Delete a race by war name and race number (e.g., --delete-race 'War 1' 5)",
     )
 
     group.add_argument(
@@ -117,6 +130,13 @@ def parse_arguments() -> argparse.Namespace:
         help="Add a team tag (e.g., --add-team-tag RK)",
     )
 
+    # Save even if the screenshot looks like a repeated (rewound) scoreboard
+    parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Save the race even if it looks like the last race replayed",
+    )
+
     # War selection (only with image_path)
     parser.add_argument(
         "--war",
@@ -133,6 +153,7 @@ def parse_arguments() -> argparse.Namespace:
         and not args.list_wars
         and args.delete_war is None
         and not args.delete_wars
+        and args.delete_race is None
         and not args.reset_db
         and not args.chat
         and not args.gui
@@ -143,8 +164,8 @@ def parse_arguments() -> argparse.Namespace:
     ):
         parser.error(
             "Image path required "
-            "(or use --list-wars, --delete-war, --delete-wars, --reset-db, "
-            "--chat, --gui, --list-players, --add-player, "
+            "(or use --list-wars, --delete-war, --delete-wars, --delete-race, "
+            "--reset-db, --chat, --gui, --list-players, --add-player, "
             "--list-team-tags, --add-team-tag)"
         )
     return args
@@ -181,7 +202,12 @@ def validate_image_path(image_path: str) -> Path:
     return path
 
 
-def process_scoreboard(image_path: Path, war_name: str = "Default") -> None:
+def process_scoreboard(
+    image_path: Path,
+    war_name: str = "Default",
+    force: bool = False,
+    confirm_rewind: Optional[Callable[[str], bool]] = None,
+) -> Optional[int]:
     """Process a scoreboard image and persist results to SQLite + JSON.
 
     Extracts scoreboard rows from image, runs OCR, matches players, and
@@ -190,9 +216,23 @@ def process_scoreboard(image_path: Path, war_name: str = "Default") -> None:
     - Inserted into SQLite war database (resources/war.db)
     - Printed to stdout for user feedback
 
+    If the scoreboard matches the last saved race and arrives within
+    DUPLICATE_WINDOW_SECONDS, it is treated as a stream rewind. In that case
+    the race is NOT saved by default; the caller can ask the user through
+    confirm_rewind (called with an explanation, returns True to save anyway).
+    force=True saves without asking.
+
     Args:
         image_path: Path to the scoreboard image.
         war_name: Name of the war (defaults to "Default").
+        force: Save the race even if it looks like the last one replayed.
+        confirm_rewind: Optional callable invoked when a rewind is detected
+            and force=False. It receives the detection message and returns
+            True if the user wants to save the race anyway. If None, the
+            race is skipped.
+
+    Returns:
+        The saved race number, or None if the race was skipped.
 
     Raises:
         FileNotFoundError: If image cannot be read.
@@ -230,6 +270,27 @@ def process_scoreboard(image_path: Path, war_name: str = "Default") -> None:
                 f"POINTS: {row.points:2d} TO: {row.points_recipient:15s} || "
                 f"MATCH: {row.match_score:5.1f} ({row.match_source})"
             )
+
+        # Rewind/duplicate detection: same scoreboard as the last race saved
+        # within DUPLICATE_WINDOW_SECONDS is almost certainly the stream
+        # being replayed. Ask before saving unless --force.
+        race_fingerprint = logic.build_race_fingerprint(scoreboard_rows)
+        last_race = persistence.get_last_race(war_id)
+        if last_race and last_race["fingerprint"] == race_fingerprint:
+            elapsed = _seconds_since(last_race["created_at"])
+            if elapsed is not None and elapsed <= DUPLICATE_WINDOW_SECONDS:
+                message = (
+                    "Possible duplicate/rewind detected: same scoreboard as "
+                    f"race #{last_race['race_number']} ({elapsed:.0f}s ago)."
+                )
+                print(f"\n{message}")
+                if force:
+                    print("Saving anyway because --force was used.")
+                elif confirm_rewind is not None and confirm_rewind(message):
+                    print("Saving anyway (confirmed).")
+                else:
+                    print("Skipping. Use --force to save it anyway.")
+                    return None
 
         # Generate race JSON file with deterministic naming
         results_dir = logic.RESOURCES_DIR / "results"
@@ -313,6 +374,7 @@ def process_scoreboard(image_path: Path, war_name: str = "Default") -> None:
             image_path=str(image_path),
             json_path=str(json_path),
             scoreboard_rows=scoreboard_rows,
+            fingerprint=race_fingerprint,
         )
         print(f"Saved race #{race_number} to database")
 
@@ -337,12 +399,55 @@ def process_scoreboard(image_path: Path, war_name: str = "Default") -> None:
 
         print(f"\nRaces played: {races_played}")
 
+        return race_number
+
     except FileNotFoundError as e:
         print(f"ERROR: {e}", file=sys.stderr)
         raise
     except Exception as e:
         print(f"ERROR processing image: {e}", file=sys.stderr)
         raise
+
+
+def _confirm_rewind(message: str) -> bool:
+    """Ask the user whether to save a race that looks like a rewind.
+
+    Defaults to no when stdin is not interactive (e.g. scripts), so
+    automated runs never get stuck or save unintended duplicates.
+
+    Args:
+        message: Detection message shown to the user.
+
+    Returns:
+        True if the user confirmed saving the race.
+    """
+    if not sys.stdin.isatty():
+        return False
+    try:
+        response = (
+            input(f"\n{message}\nAdd the race anyway? (yes/no): ")
+            .strip()
+            .lower()
+        )
+    except (EOFError, KeyboardInterrupt):
+        return False
+    return response == "yes"
+
+
+def _seconds_since(created_at: str) -> Optional[float]:
+    """Seconds elapsed between a SQLite timestamp and now (UTC).
+
+    Args:
+        created_at: Timestamp string from SQLite ("YYYY-MM-DD HH:MM:SS", UTC).
+
+    Returns:
+        Seconds as float, or None if the timestamp cannot be parsed.
+    """
+    try:
+        ts = datetime.strptime(created_at, "%Y-%m-%d %H:%M:%S")
+    except (TypeError, ValueError):
+        return None
+    return (datetime.utcnow() - ts).total_seconds()
 
 
 def list_wars_cmd() -> None:
@@ -402,6 +507,45 @@ def delete_wars_cmd(war_ids: list[int]) -> None:
         print(f"✓ Deleted {len(war_ids)} war(s).")
     else:
         print("ERROR: Deletion failed.")
+        sys.exit(1)
+
+
+def delete_race_cmd(war_name: str, race_number: int) -> None:
+    """Delete a single race by war name and race number.
+
+    Standings are recalculated after the deletion so cumulative points stay
+    consistent with the remaining races.
+    """
+    persistence.init_db()
+    war_id = persistence.get_war_by_name(war_name)
+    if war_id is None:
+        print(f"ERROR: War '{war_name}' not found.")
+        sys.exit(1)
+
+    race = persistence.get_race(war_id, race_number)
+    if race is None:
+        print(f"ERROR: Race #{race_number} not found in war '{war_name}'.")
+        sys.exit(1)
+
+    print(f"\nWar: {war_name}")
+    print(f"Race #{race_number} created at: {race['created_at']}")
+
+    response = (
+        input(f"\nDelete race #{race_number} from '{war_name}'? (yes/no): ")
+        .strip()
+        .lower()
+    )
+    if response != "yes":
+        print("Deletion cancelled.")
+        return
+
+    if persistence.delete_race(war_id, race_number):
+        print(
+            f"✓ Deleted race #{race_number} from '{war_name}'. "
+            "Standings recalculated."
+        )
+    else:
+        print(f"ERROR: Race #{race_number} not found in war '{war_name}'.")
         sys.exit(1)
 
 
@@ -522,6 +666,16 @@ def main() -> None:
             delete_wars_cmd([int(x) for x in args.delete_wars])
             return
 
+        if args.delete_race is not None:
+            war_name_arg, race_number_arg = args.delete_race
+            try:
+                race_number = int(race_number_arg)
+            except ValueError:
+                print(f"ERROR: Invalid race number: {race_number_arg}")
+                sys.exit(1)
+            delete_race_cmd(war_name_arg, race_number)
+            return
+
         if args.reset_db:
             reset_db_cmd()
             return
@@ -599,7 +753,9 @@ def main() -> None:
                 war_manager.set_current_war(new_war_name)
                 war_name = new_war_name
 
-        process_scoreboard(image_path, war_name)
+        process_scoreboard(
+            image_path, war_name, force=args.force, confirm_rewind=_confirm_rewind
+        )
     except (FileNotFoundError, ValueError) as e:
         print(f"ERROR: {e}", file=sys.stderr)
         sys.exit(1)

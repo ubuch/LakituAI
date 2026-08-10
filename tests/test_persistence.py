@@ -186,6 +186,57 @@ class PersistenceTests(unittest.TestCase):
         conn.close()
         self.assertEqual(count, 0)
 
+    def test_get_last_race_returns_fingerprint(self):
+        """get_last_race should return the most recent race with its data."""
+        war_id = persistence.get_or_create_war("War 1", db_path=self.db_path)
+
+        row = logic.ScoreboardRowResult(
+            row_number=1, points=15, ocr_text="RK PlayerA",
+            normalized_text="RK PlayerA", matched_player="RK PlayerA",
+            points_recipient="RK PlayerA", match_score=100.0, match_source="players",
+        )
+
+        persistence.save_race(
+            war_id=war_id, race_number=1, image_path="test.jpg",
+            json_path="test.json", scoreboard_rows=[row],
+            db_path=self.db_path, fingerprint="1|RK PlayerA",
+        )
+
+        last = persistence.get_last_race(war_id, db_path=self.db_path)
+        self.assertIsNotNone(last)
+        self.assertEqual(last["race_number"], 1)
+        self.assertEqual(last["fingerprint"], "1|RK PlayerA")
+        self.assertIsNotNone(last["created_at"])
+
+    def test_get_last_race_returns_most_recent(self):
+        """get_last_race should return the newest race when there are several."""
+        war_id = persistence.get_or_create_war("War 1", db_path=self.db_path)
+
+        row = logic.ScoreboardRowResult(
+            row_number=1, points=15, ocr_text="RK PlayerA",
+            normalized_text="RK PlayerA", matched_player="RK PlayerA",
+            points_recipient="RK PlayerA", match_score=100.0, match_source="players",
+        )
+
+        persistence.save_race(
+            war_id=war_id, race_number=1, image_path="a.jpg",
+            json_path="a.json", scoreboard_rows=[row],
+            db_path=self.db_path, fingerprint="fp-1",
+        )
+        persistence.save_race(
+            war_id=war_id, race_number=2, image_path="b.jpg",
+            json_path="b.json", scoreboard_rows=[row],
+            db_path=self.db_path, fingerprint="fp-2",
+        )
+
+        last = persistence.get_last_race(war_id, db_path=self.db_path)
+        self.assertEqual(last["race_number"], 2)
+        self.assertEqual(last["fingerprint"], "fp-2")
+
+    def test_get_last_race_empty_war_returns_none(self):
+        war_id = persistence.get_or_create_war("War 1", db_path=self.db_path)
+        self.assertIsNone(persistence.get_last_race(war_id, db_path=self.db_path))
+
     def test_list_wars(self):
         """Listing wars should return all wars with metadata."""
         war_id_1 = persistence.get_or_create_war("War A", db_path=self.db_path)
@@ -343,6 +394,134 @@ class PersistenceTests(unittest.TestCase):
         persistence.reset_db(db_path=self.db_path)
         self.assertTrue(self.db_path.exists())
         self.assertEqual(len(persistence.list_wars(db_path=self.db_path)), 0)
+
+    def _make_row(self, name, position, points):
+        """Helper to build a ScoreboardRowResult for a named player."""
+        return logic.ScoreboardRowResult(
+            row_number=position,
+            points=points,
+            ocr_text=name,
+            normalized_text=name,
+            matched_player=name,
+            points_recipient=name,
+            match_score=100.0,
+            match_source="players",
+        )
+
+    def test_get_race_returns_race_data(self):
+        war_id = persistence.get_or_create_war("War 1", db_path=self.db_path)
+        row = self._make_row("ne PlayerA", 1, 15)
+
+        persistence.save_race(
+            war_id=war_id, race_number=1, image_path="a.jpg",
+            json_path="a.json", scoreboard_rows=[row],
+            db_path=self.db_path, fingerprint="fp-1",
+        )
+
+        race = persistence.get_race(war_id, 1, db_path=self.db_path)
+        self.assertIsNotNone(race)
+        self.assertEqual(race["race_number"], 1)
+        self.assertEqual(race["fingerprint"], "fp-1")
+        self.assertEqual(race["json_path"], "a.json")
+        self.assertIsNotNone(race["created_at"])
+
+    def test_get_race_missing_returns_none(self):
+        war_id = persistence.get_or_create_war("War 1", db_path=self.db_path)
+        self.assertIsNone(persistence.get_race(war_id, 1, db_path=self.db_path))
+
+    def test_delete_race_rebuilds_standings(self):
+        """Deleting a race should remove its data and recalculate standings."""
+        war_id = persistence.get_or_create_war("War 1", db_path=self.db_path)
+        team_tags = ("ne", "RK")
+
+        rows = [
+            self._make_row("ne PlayerA", 1, 15),
+            self._make_row("RK PlayerB", 2, 12),
+        ]
+
+        for race_number in (1, 2):
+            persistence.save_race(
+                war_id=war_id, race_number=race_number, image_path=f"{race_number}.jpg",
+                json_path=f"{race_number}.json", scoreboard_rows=rows,
+                db_path=self.db_path, team_tags=team_tags,
+            )
+            persistence.update_standings(
+                war_id, rows, team_tags=team_tags, db_path=self.db_path
+            )
+
+        self.assertEqual(
+            persistence.get_player_standings(war_id, db_path=self.db_path),
+            {"ne PlayerA": 30, "RK PlayerB": 24},
+        )
+        self.assertEqual(
+            persistence.get_team_standings(war_id, db_path=self.db_path),
+            {"ne": 30, "RK": 24},
+        )
+        self.assertEqual(persistence.get_races_played(war_id, db_path=self.db_path), 2)
+
+        deleted = persistence.delete_race(war_id, 2, db_path=self.db_path)
+        self.assertTrue(deleted)
+
+        self.assertIsNone(persistence.get_race(war_id, 2, db_path=self.db_path))
+        self.assertEqual(
+            persistence.get_player_standings(war_id, db_path=self.db_path),
+            {"ne PlayerA": 15, "RK PlayerB": 12},
+        )
+        self.assertEqual(
+            persistence.get_team_standings(war_id, db_path=self.db_path),
+            {"ne": 15, "RK": 12},
+        )
+        self.assertEqual(persistence.get_races_played(war_id, db_path=self.db_path), 1)
+
+    def test_delete_race_removes_json_file_from_disk(self):
+        war_id = persistence.get_or_create_war("War 1", db_path=self.db_path)
+        row = self._make_row("ne PlayerA", 1, 15)
+        json_file = Path(self.temp_dir.name) / "race_1.json"
+        json_file.write_text("{}", encoding="utf-8")
+
+        persistence.save_race(
+            war_id=war_id, race_number=1, image_path="a.jpg",
+            json_path=str(json_file), scoreboard_rows=[row],
+            db_path=self.db_path,
+        )
+        self.assertTrue(json_file.exists())
+
+        persistence.delete_race(war_id, 1, db_path=self.db_path)
+        self.assertFalse(json_file.exists())
+
+    def test_delete_race_missing_returns_false(self):
+        war_id = persistence.get_or_create_war("War 1", db_path=self.db_path)
+        self.assertFalse(persistence.delete_race(war_id, 5, db_path=self.db_path))
+
+    def test_rebuild_standings_recomputes_from_remaining_races(self):
+        war_id = persistence.get_or_create_war("War 1", db_path=self.db_path)
+        team_tags = ("ne", "RK")
+
+        race_1 = [
+            self._make_row("ne PlayerA", 1, 15),
+            self._make_row("RK PlayerB", 2, 12),
+        ]
+        race_2 = [
+            self._make_row("ne PlayerA", 1, 15),
+            self._make_row("RK PlayerB", 2, 12),
+        ]
+
+        for race_number, rows in ((1, race_1), (2, race_2)):
+            persistence.save_race(
+                war_id=war_id, race_number=race_number, image_path=f"{race_number}.jpg",
+                json_path=f"{race_number}.json", scoreboard_rows=rows,
+                db_path=self.db_path, team_tags=team_tags,
+            )
+
+        persistence.rebuild_standings(war_id, db_path=self.db_path)
+        self.assertEqual(
+            persistence.get_player_standings(war_id, db_path=self.db_path),
+            {"ne PlayerA": 30, "RK PlayerB": 24},
+        )
+        self.assertEqual(
+            persistence.get_team_standings(war_id, db_path=self.db_path),
+            {"ne": 30, "RK": 24},
+        )
 
 
 if __name__ == "__main__":

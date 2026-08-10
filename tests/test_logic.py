@@ -38,6 +38,47 @@ class LogicTests(unittest.TestCase):
     def test_build_net_points_empty_is_empty(self):
         self.assertEqual(logic.build_net_points({}), {})
 
+    def test_build_race_fingerprint_is_stable_for_same_scoreboard(self):
+        players = ["RK Alpha", "ne.COOK", "β-Ray"]
+
+        rows_1 = logic.build_scoreboard_results(
+            [(1, "RK Alpha"), (2, "ne COOK"), (3, "β-Ray")], players
+        )
+        rows_2 = logic.build_scoreboard_results(
+            [(1, "RK Alpha"), (2, "ne COOK"), (3, "β-Ray")], players
+        )
+
+        self.assertEqual(
+            logic.build_race_fingerprint(rows_1),
+            logic.build_race_fingerprint(rows_2),
+        )
+
+    def test_build_race_fingerprint_changes_with_different_results(self):
+        players = ["RK Alpha", "ne.COOK", "β-Ray"]
+
+        rows_a = logic.build_scoreboard_results(
+            [(1, "RK Alpha"), (2, "ne COOK"), (3, "β-Ray")], players
+        )
+        rows_b = logic.build_scoreboard_results(
+            [(1, "β-Ray"), (2, "ne COOK"), (3, "RK Alpha")], players
+        )
+
+        self.assertNotEqual(
+            logic.build_race_fingerprint(rows_a),
+            logic.build_race_fingerprint(rows_b),
+        )
+
+    def test_build_race_fingerprint_orders_by_position(self):
+        players = ["RK Alpha", "ne.COOK"]
+
+        rows = logic.build_scoreboard_results(
+            [(2, "ne COOK"), (1, "RK Alpha")], players
+        )
+
+        self.assertEqual(
+            logic.build_race_fingerprint(rows), "1|RK Alpha;2|ne.COOK"
+        )
+
     def test_validate_player_tags_rejects_players_without_team_tags(self):
         with self.assertRaises(ValueError):
             logic.validate_player_tags(["RK AxeeL", "NoTeam"], ("RK", "ne"))
