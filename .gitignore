@@ -40,6 +40,8 @@ config/settings.json
 .idea/
 .DS_Store
 Thumbs.db
+# Windows NTFS zone metadata (generated when files are downloaded/transferred)
+*:Zone.Identifier
 
 # Local scratch/output folders
 tmp/
