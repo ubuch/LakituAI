@@ -221,6 +221,20 @@ class EditPlayerTests(_BaseToolTest):
         result = tools.edit_player("nobody", "RK New")
         self.assertEqual(result, "Player 'nobody' not found.")
 
+    def test_rename_config_only_player(self):
+        # Player registered in config but never raced (no DB rows).
+        cfg = config.load_config(
+            players_path=self.players_path,
+            team_tags_path=self.tags_path,
+        )
+        cfg.players = list(cfg.players) + ["RK Testeo"]
+        with mock.patch("lakituai.chat.tools.config.load_config", return_value=cfg):
+            with mock.patch("lakituai.chat.tools.config.save_config"):
+                result = tools.edit_player("testeo", "RK Prueba")
+
+        self.assertIn("Renamed", result)
+        self.assertIn("RK Prueba", result)
+
     @mock.patch("lakituai.chat.tools.config.load_config")
     def test_same_name(self, mock_cfg):
         mock_cfg.return_value.players = ["RK César"]

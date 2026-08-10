@@ -29,6 +29,42 @@ def _strip_tag(name: str, team_tags: list[str]) -> str:
     return name
 
 
+def _resolve_config_player_name(query: str) -> Optional[str]:
+    """Resolve a player query against the registered roster (config JSON).
+
+    Same matching rules as resolve_player_name, but only checks players
+    in the config file, so newly added players who have not raced yet can
+    still be renamed.
+
+    Returns the canonical stored name or None if no match found.
+    """
+    cfg = config.load_config()
+    if not cfg.players:
+        return None
+
+    for name in cfg.players:
+        if query == name:
+            return name
+
+    q_lower = query.lower()
+    for name in cfg.players:
+        if q_lower == name.lower():
+            return name
+
+    q_norm = _normalize(query)
+    for name in cfg.players:
+        if q_norm == _normalize(name):
+            return name
+
+    q_base = _normalize(_strip_tag(query, cfg.team_tags))
+    for name in cfg.players:
+        stored_base = _normalize(_strip_tag(name, cfg.team_tags))
+        if q_base and stored_base and q_base == stored_base:
+            return name
+
+    return None
+
+
 def resolve_player_name(query: str, db_path: Optional[str] = None) -> Optional[str]:
     """Resolve a player query to the canonical stored name.
 
@@ -439,6 +475,8 @@ def edit_player(old_name: str, new_name: str) -> str:
         new_name: New player name (e.g., 'RK Césarito'). Must include team tag.
     """
     resolved = resolve_player_name(old_name)
+    if not resolved:
+        resolved = _resolve_config_player_name(old_name)
     if not resolved:
         return f"Player '{old_name}' not found."
 
