@@ -5,13 +5,32 @@ calling support. The agent can query and manage war data conversationally.
 """
 
 import inspect
+import json
+import re
 import sys
-from typing import Any
+from types import SimpleNamespace
+from typing import Any, Optional
 
 import ollama
 from ollama import ChatResponse
 
 from lakituai.chat.tools import ALL_TOOLS
+
+# Safety cap: if the model keeps calling tools without answering, stop after
+# this many rounds instead of looping forever.
+MAX_TOOL_ROUNDS = 15
+
+# qwen3 tool calling is much more reliable with low temperature.
+TEMPERATURE = 0
+
+_ESCAPED_UNICODE = re.compile(r"\\u([0-9a-fA-F]{4})")
+
+# qwen3 sometimes emits a tool call as raw JSON in the message text instead of
+# a structured tool_call. Match {"name": "...", "arguments": {...}}.
+_TOOL_CALL_IN_TEXT = re.compile(
+    r'\{\s*"name"\s*:\s*"([^"]+)"\s*,\s*"arguments"\s*:\s*(\{.*?\})\s*\}',
+    re.DOTALL,
+)
 
 SYSTEM_PROMPT = """\
 You are LakituAI, an assistant for tracking Mario Kart World competitive wars.
@@ -34,11 +53,24 @@ IMPORTANT SETUP ORDER:
    and add them with add_team_tag BEFORE adding any players.
 3. Players must include their team tag as prefix or suffix (e.g., 'RK AxeeL', 'ne.ths').
 
+Player names may include accents and special characters (e.g., 'César').
+Add them EXACTLY as the user spells them: accents are fully supported and
+must never be removed or treated as an error.
+
+If add_player reports that a player already exists, simply tell the user it
+is already registered. Do not call the same tool again for that player.
+
 When a user asks about standings, races, or players, use the appropriate tool.
 If the user doesn't specify a war, use the current/default war.
 Always show results in a clear, readable format.
 Be concise but helpful. Respond in the same language the user writes in, but never
 translate the words "war/wars" and "tag/tags".
+
+ACT, DO NOT DESCRIBE: when the user asks you to add, remove, rename, or query
+something, call the tools immediately and completely. Never answer with a
+description of the steps you would take instead of doing them. If the setup
+is already done (e.g., team tags exist), proceed directly without commenting
+on the setup process.
 """
 
 # Model selection: We tested qwen3:1.7b (1.4GB, fast
@@ -50,6 +82,91 @@ translate the words "war/wars" and "tag/tags".
 # On a 4GB GPU (e.g., RTX 3050 Ti), expect slower responses.
 # For best experience, use a GPU with 6GB+ VRAM.
 MODEL = "qwen3:4b"
+
+
+def _unescape_unicode(value: str) -> str:
+    """Decode literal \\uXXXX escape sequences (e.g. 'C\\u00e9sar' -> 'César').
+
+    Small models sometimes emit escaped unicode in tool-call arguments.
+    Only \\uXXXX sequences are decoded, other backslashes are left alone.
+    """
+    if "\\u" not in value:
+        return value
+    return _ESCAPED_UNICODE.sub(lambda m: chr(int(m.group(1), 16)), value)
+
+
+def _make_tool_call(name: str, arguments: dict) -> Any:
+    """Build a tool_call-like object for the agent loop."""
+    return SimpleNamespace(function=SimpleNamespace(name=name, arguments=arguments))
+
+
+def _extract_tool_calls_from_text(content: str) -> Optional[Any]:
+    """Parse JSON tool calls embedded in plain text (qwen3 quirk).
+
+    Small models sometimes answer with raw JSON instead of structured
+    tool_calls. Handled shapes:
+    - A single call: {"name": "add_player", "arguments": {...}}
+    - A list of add_player requests:
+      [{"name": "César", "team_tag": "RK"}, {"name": "ths", "team_tag": "ne"}]
+    - The same, wrapped in a ```json code fence.
+
+    Args:
+        content: The assistant's message text.
+
+    Returns:
+        A tool_call-like object, a list of them, or None.
+    """
+    if not content:
+        return None
+
+    text = content.strip()
+    if text.startswith("```"):
+        text = text.strip("`").strip()
+        if text.startswith("json"):
+            text = text[4:].strip()
+
+    data = None
+    try:
+        data = json.loads(text)
+    except (ValueError, TypeError):
+        data = None
+
+    if isinstance(data, list):
+        calls = []
+        for item in data:
+            if not isinstance(item, dict) or not isinstance(item.get("name"), str):
+                continue
+            if isinstance(item.get("team_tag"), str):
+                calls.append(
+                    _make_tool_call(
+                        "add_player",
+                        {"name": item["name"], "team_tag": item["team_tag"]},
+                    )
+                )
+            elif isinstance(item.get("arguments"), dict):
+                calls.append(_make_tool_call(item["name"], item["arguments"]))
+        if not calls:
+            return None
+        return calls if len(calls) > 1 else calls[0]
+
+    if not isinstance(data, dict):
+        match = _TOOL_CALL_IN_TEXT.search(content)
+        if not match:
+            return None
+        name, args_json = match.group(1), match.group(2)
+        try:
+            data = {"name": name, "arguments": json.loads(args_json)}
+        except (ValueError, TypeError):
+            return None
+
+    if not isinstance(data, dict):
+        return None
+    name = data.get("name")
+    arguments = data.get("arguments")
+    if not isinstance(name, str) or not isinstance(arguments, dict):
+        return None
+
+    return _make_tool_call(name, arguments)
 
 
 def _execute_tool(tool_call: Any) -> str:
@@ -73,6 +190,8 @@ def _execute_tool(tool_call: Any) -> str:
     kwargs = {}
     for param_name, param_value in tool_call.function.arguments.items():
         if param_name in sig.parameters:
+            if isinstance(param_value, str):
+                param_value = _unescape_unicode(param_value)
             param_type = sig.parameters[param_name].annotation
             if param_type is not inspect.Parameter.empty:
                 try:
@@ -122,10 +241,36 @@ class ChatSession:
                 model=MODEL,
                 messages=self.messages,
                 tools=ALL_TOOLS,
+                options={"temperature": TEMPERATURE},
             )
-            self.messages.append({"role": "assistant", "content": response.message.content})
 
-            while response.message.tool_calls:
+            tool_rounds = 0
+            while True:
+                # qwen3 sometimes returns the tool call as JSON in the message
+                # text instead of a structured tool_call. Detect and run it.
+                if not response.message.tool_calls:
+                    text_calls = _extract_tool_calls_from_text(
+                        response.message.content
+                    )
+                    if isinstance(text_calls, list):
+                        response.message.tool_calls = text_calls
+                    elif text_calls is not None:
+                        response.message.tool_calls = [text_calls]
+
+                self.messages.append(
+                    {"role": "assistant", "content": response.message.content}
+                )
+
+                if not response.message.tool_calls:
+                    return response.message.content
+
+                tool_rounds += 1
+                if tool_rounds > MAX_TOOL_ROUNDS:
+                    return (
+                        "I stopped because this request needed too many tool "
+                        "calls in a row. Please ask for one action at a time."
+                    )
+
                 for tool_call in response.message.tool_calls:
                     tool_name = tool_call.function.name
                     print(f"  [tool: {tool_name}]")
@@ -143,10 +288,8 @@ class ChatSession:
                     model=MODEL,
                     messages=self.messages,
                     tools=ALL_TOOLS,
+                    options={"temperature": TEMPERATURE},
                 )
-                self.messages.append({"role": "assistant", "content": response.message.content})
-
-            return response.message.content
         except Exception:
             del self.messages[start_len:]
             raise

@@ -391,6 +391,44 @@ def get_races_played(
     return races_count
 
 
+def _remove_race_json(json_path: Optional[str]) -> None:
+    """Delete a race JSON file and its per-war directory if it becomes empty."""
+    if not json_path:
+        return
+    json_file = Path(json_path)
+    if json_file.exists():
+        json_file.unlink()
+    try:
+        json_file.parent.rmdir()
+    except OSError:
+        pass
+
+
+def get_next_race_number(war_id: int, db_path: Path = DB_PATH) -> int:
+    """Get the next race number for a war.
+
+    Race numbers are per war: every war starts again at race #1.
+
+    Args:
+        war_id: ID of the war.
+        db_path: Path to SQLite database.
+
+    Returns:
+        The next race number (max existing race number + 1).
+    """
+    conn = sqlite3.connect(str(db_path))
+    cursor = conn.cursor()
+
+    cursor.execute(
+        "SELECT MAX(race_number) FROM races WHERE war_id = ?",
+        (war_id,),
+    )
+    row = cursor.fetchone()
+    conn.close()
+
+    return (row[0] if row and row[0] is not None else 0) + 1
+
+
 def list_wars(db_path: Path = DB_PATH) -> list[dict]:
     """List all wars with metadata.
 
@@ -507,9 +545,7 @@ def delete_wars(war_ids: list[int], db_path: Path = DB_PATH) -> bool:
 
     # Delete race JSON files from disk
     for json_path_str in json_paths:
-        json_file = Path(json_path_str)
-        if json_file.exists():
-            json_file.unlink()
+        _remove_race_json(json_path_str)
 
     return True
 
@@ -635,11 +671,7 @@ def delete_race(war_id: int, race_number: int, db_path: Path = DB_PATH) -> bool:
     conn.commit()
     conn.close()
 
-    # Remove associated race JSON from disk, if any
-    if json_path:
-        json_file = Path(json_path)
-        if json_file.exists():
-            json_file.unlink()
+    _remove_race_json(json_path)
 
     rebuild_standings(war_id, db_path)
     return True

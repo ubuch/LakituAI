@@ -145,7 +145,19 @@ def add_player(name: str, team_tag: str) -> str:
         name: Player name (e.g., 'ths')
         team_tag: Team tag prefix (e.g., 'ne', 'RK')
     """
-    full_name = f"{team_tag} {name}"
+    name = name.strip()
+    team_tag = team_tag.strip()
+
+    if not name:
+        return "Error: player name is empty."
+    if not team_tag:
+        return "Error: team tag is empty."
+
+    if name.lower().startswith(team_tag.lower()):
+        full_name = name
+    else:
+        full_name = f"{team_tag} {name}"
+
     success, msg = player_management.add_player(full_name)
     return msg
 
@@ -175,9 +187,15 @@ def get_standings(war_name: Optional[str] = None) -> str:
     if war_id is None:
         return f"War '{war_name}' not found."
 
-    player_standings = persistence.get_player_standings(war_id)
-    team_standings = persistence.get_team_standings(war_id)
-    races_played = persistence.get_races_played(war_id)
+    player_standings = persistence.get_player_standings(
+        war_id, db_path=persistence.DB_PATH
+    )
+    team_standings = persistence.get_team_standings(
+        war_id, db_path=persistence.DB_PATH
+    )
+    races_played = persistence.get_races_played(
+        war_id, db_path=persistence.DB_PATH
+    )
 
     lines = [f"War: {war_name} | Races played: {races_played}", ""]
 
@@ -822,9 +840,13 @@ def get_quick_summary(war_name: Optional[str] = None) -> str:
     if war_id is None:
         return f"War '{war_name}' not found."
 
-    races_played = persistence.get_races_played(war_id)
-    player_standings = persistence.get_player_standings(war_id)
-    team_standings = persistence.get_team_standings(war_id)
+    races_played = persistence.get_races_played(war_id, db_path=persistence.DB_PATH)
+    player_standings = persistence.get_player_standings(
+        war_id, db_path=persistence.DB_PATH
+    )
+    team_standings = persistence.get_team_standings(
+        war_id, db_path=persistence.DB_PATH
+    )
 
     if not player_standings:
         return f"War '{war_name}' has no race data yet."

@@ -345,6 +345,51 @@ class PersistenceTests(unittest.TestCase):
         self.assertTrue(success)
         self.assertEqual(len(persistence.list_wars(db_path=self.db_path)), 0)
 
+    def test_delete_wars_removes_race_json_files(self):
+        """Deleting a war should also delete its race JSON files and war dir."""
+        war_id = persistence.get_or_create_war("War 1", db_path=self.db_path)
+        row = self._make_row("ne PlayerA", 1, 15)
+
+        war_dir = Path(self.temp_dir.name) / "results" / f"war_{war_id}"
+        war_dir.mkdir(parents=True)
+        json_file = war_dir / "race_1_ne-teamB_2026_08_10.json"
+        json_file.write_text("{}", encoding="utf-8")
+
+        persistence.save_race(
+            war_id=war_id, race_number=1, image_path="a.jpg",
+            json_path=str(json_file), scoreboard_rows=[row],
+            db_path=self.db_path,
+        )
+        self.assertTrue(json_file.exists())
+
+        persistence.delete_wars([war_id], db_path=self.db_path)
+
+        self.assertFalse(json_file.exists())
+        self.assertFalse(war_dir.exists())
+
+    def test_get_next_race_number_is_per_war(self):
+        """Race numbers should restart at 1 for each war."""
+        war_a = persistence.get_or_create_war("War A", db_path=self.db_path)
+        war_b = persistence.get_or_create_war("War B", db_path=self.db_path)
+        row = self._make_row("ne PlayerA", 1, 15)
+
+        self.assertEqual(
+            persistence.get_next_race_number(war_a, db_path=self.db_path), 1
+        )
+
+        persistence.save_race(
+            war_id=war_a, race_number=1, image_path="a.jpg",
+            json_path="a.json", scoreboard_rows=[row],
+            db_path=self.db_path,
+        )
+
+        self.assertEqual(
+            persistence.get_next_race_number(war_a, db_path=self.db_path), 2
+        )
+        self.assertEqual(
+            persistence.get_next_race_number(war_b, db_path=self.db_path), 1
+        )
+
     def test_reset_db(self):
         """Resetting the DB should remove all data but preserve the file and schema."""
         war_id = persistence.get_or_create_war("War 1", db_path=self.db_path)

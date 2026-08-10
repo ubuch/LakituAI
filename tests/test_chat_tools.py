@@ -121,6 +121,40 @@ class ResolvePlayerNameTests(unittest.TestCase):
         )
 
 
+class AddPlayerToolTests(unittest.TestCase):
+    """Tests for the add_player chat tool."""
+
+    def _call(self, name, team_tag):
+        with mock.patch("lakituai.chat.tools.player_management") as pm:
+            pm.add_player.return_value = (True, "added")
+            result = tools.add_player(name, team_tag)
+        return pm.add_player, result
+
+    def test_add_player_builds_full_name(self):
+        add_player_mock, _ = self._call("César", "RK")
+        add_player_mock.assert_called_once_with("RK César")
+
+    def test_add_player_does_not_duplicate_tag(self):
+        add_player_mock, _ = self._call("RK César", "RK")
+        add_player_mock.assert_called_once_with("RK César")
+
+    def test_add_player_strips_whitespace(self):
+        add_player_mock, _ = self._call("  César  ", "RK")
+        add_player_mock.assert_called_once_with("RK César")
+
+    def test_add_player_empty_name_errors(self):
+        with mock.patch("lakituai.chat.tools.player_management") as pm:
+            result = tools.add_player("", "RK")
+        self.assertIn("empty", result)
+        pm.add_player.assert_not_called()
+
+    def test_add_player_empty_tag_errors(self):
+        with mock.patch("lakituai.chat.tools.player_management") as pm:
+            result = tools.add_player("César", " ")
+        self.assertIn("empty", result)
+        pm.add_player.assert_not_called()
+
+
 class _BaseToolTest(unittest.TestCase):
     """Base class for tool tests that need a temp DB + war."""
 

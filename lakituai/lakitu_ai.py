@@ -292,25 +292,13 @@ def process_scoreboard(
                     print("Skipping. Use --force to save it anyway.")
                     return None
 
-        # Generate race JSON file with deterministic naming
-        results_dir = logic.RESOURCES_DIR / "results"
+        # Race numbers are per war: each war restarts at race #1.
+        race_number = persistence.get_next_race_number(war_id)
+
+        # JSON files live in a per-war subdirectory so two wars can both
+        # have a race #1 without filename collisions.
+        results_dir = logic.RESOURCES_DIR / "results" / f"war_{war_id}"
         results_dir.mkdir(parents=True, exist_ok=True)
-
-        # Determine race number by parsing existing race filenames
-        import re
-
-        existing = list(results_dir.glob("race_*.json"))
-        max_n = 0
-        for p in existing:
-            m = re.match(r"race_(\d+)_", p.name)
-            if m:
-                try:
-                    n = int(m.group(1))
-                    if n > max_n:
-                        max_n = n
-                except ValueError:
-                    continue
-        race_number = max_n + 1
 
         # Derive team tags from standings
         team_keys = list(logic.build_team_points(scoreboard_rows).keys())

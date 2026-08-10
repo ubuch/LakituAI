@@ -415,6 +415,9 @@ class CLIProcessRewindTests(unittest.TestCase):
                 "lakituai.lakitu_ai.persistence.get_races_played", return_value=1
             ),
             mock.patch(
+                "lakituai.lakitu_ai.persistence.get_next_race_number", return_value=1
+            ),
+            mock.patch(
                 "lakituai.lakitu_ai.logic.prepare_scoreboard_rows",
                 return_value=["row0"],
             ),
