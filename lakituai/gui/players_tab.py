@@ -27,7 +27,7 @@ class PlayersTab(customtkinter.CTkFrame):
         self.refresh()
 
     def _build(self):
-        self.grid_columnconfigure(0, weight=2)
+        self.grid_columnconfigure(0, weight=6, minsize=560)
         self.grid_columnconfigure(1, weight=1)
         self.grid_rowconfigure(1, weight=1)
 
@@ -49,15 +49,17 @@ class PlayersTab(customtkinter.CTkFrame):
         self.player_list.grid(row=1, column=0, sticky="nsew", padx=(10, 5), pady=(0, 10))
         self.player_list.grid_columnconfigure(0, weight=1)
 
-        # Right: add form + team tags
+        # Right: compact team tags on top, add player form right below it
         right = customtkinter.CTkFrame(self, fg_color="transparent")
         right.grid(row=1, column=1, sticky="nsew", padx=(5, 10), pady=(0, 10))
         right.grid_columnconfigure(0, weight=1)
         right.grid_rowconfigure(0, weight=0)
-        right.grid_rowconfigure(1, weight=1)
+        right.grid_rowconfigure(1, weight=0)
+        right.grid_rowconfigure(2, weight=0)
+        right.grid_rowconfigure(3, weight=1)
 
-        self._build_add_form(right)
         self._build_tags_panel(right)
+        self._build_add_form(right)
 
         # Feedback line
         self.status_label = customtkinter.CTkLabel(self, text="", anchor="w")
@@ -65,37 +67,37 @@ class PlayersTab(customtkinter.CTkFrame):
 
     def _build_add_form(self, parent):
         form = customtkinter.CTkFrame(parent, corner_radius=8)
-        form.grid(row=0, column=0, sticky="ew", padx=0, pady=(0, 10))
+        form.grid(row=2, column=0, sticky="ew", padx=0, pady=10)
         form.grid_columnconfigure(1, weight=1)
 
         customtkinter.CTkLabel(form, text="Add player", anchor="w").grid(
             row=0, column=0, columnspan=3, sticky="w", padx=10, pady=(8, 4)
         )
 
-        customtkinter.CTkLabel(form, text="Name:").grid(row=1, column=0, sticky="w", padx=10, pady=4)
-        self.add_name_entry = customtkinter.CTkEntry(form, placeholder_text="Player name")
-        self.add_name_entry.grid(row=1, column=1, sticky="ew", padx=(0, 10), pady=4)
-        self.add_name_entry.bind("<Return>", lambda event: self._add_player())
-
-        customtkinter.CTkLabel(form, text="Tag:").grid(row=2, column=0, sticky="w", padx=10, pady=4)
+        customtkinter.CTkLabel(form, text="Tag:").grid(row=1, column=0, sticky="w", padx=10, pady=4)
         self.add_tag_menu = customtkinter.CTkOptionMenu(form, values=["(none)"], width=120)
-        self.add_tag_menu.grid(row=2, column=1, sticky="w", padx=(0, 10), pady=4)
+        self.add_tag_menu.grid(row=1, column=1, columnspan=2, sticky="w", padx=(0, 10), pady=4)
+
+        customtkinter.CTkLabel(form, text="Name:").grid(row=2, column=0, sticky="w", padx=10, pady=4)
+        self.add_name_entry = customtkinter.CTkEntry(form, placeholder_text="Player name")
+        self.add_name_entry.grid(row=2, column=1, sticky="ew", padx=(0, 10), pady=4)
+        self.add_name_entry.bind("<Return>", lambda event: self._add_player())
 
         self.add_button = customtkinter.CTkButton(form, text="Add", command=self._add_player)
         self.add_button.grid(row=2, column=2, padx=(0, 10), pady=4)
 
     def _build_tags_panel(self, parent):
         panel = customtkinter.CTkFrame(parent, corner_radius=8)
-        panel.grid(row=1, column=0, sticky="nsew")
+        panel.grid(row=0, column=0, sticky="nsew")
         panel.grid_columnconfigure(0, weight=1)
+        self._tags_panel = panel
 
         customtkinter.CTkLabel(panel, text="Team tags", anchor="w").grid(
             row=0, column=0, sticky="w", padx=10, pady=(8, 4)
         )
 
-        self.tag_list = customtkinter.CTkScrollableFrame(panel, height=150)
-        self.tag_list.grid(row=1, column=0, sticky="ew", padx=10, pady=(0, 4))
-        self.tag_list.grid_columnconfigure(0, weight=1)
+        self.tag_list = None
+        self._tag_wrapper = None
 
         bottom = customtkinter.CTkFrame(panel, fg_color="transparent")
         bottom.grid(row=2, column=0, sticky="ew", padx=10, pady=(0, 8))
@@ -173,6 +175,7 @@ class PlayersTab(customtkinter.CTkFrame):
             self.player_rows[player] = row
 
     def _render_tags(self):
+        self._ensure_tag_list_widget()
         for widget in self.tag_list.winfo_children():
             widget.destroy()
         self.tag_buttons = {}
@@ -204,6 +207,39 @@ class PlayersTab(customtkinter.CTkFrame):
             remove_btn.grid(row=0, column=1, padx=(0, 6), pady=4)
 
             self.tag_buttons[tag] = row
+
+    def _ensure_tag_list_widget(self):
+        """Build the tag list as a plain frame, or as a scrollable frame with
+        a fixed height once there are more than 4 tags (so the panel does not
+        grow unbounded)."""
+        many = len(self.team_tags) > 4
+        want_scroll = isinstance(self.tag_list, customtkinter.CTkScrollableFrame)
+
+        if (many and not want_scroll) or (not many and want_scroll):
+            if self.tag_list is not None:
+                self.tag_list.destroy()
+            if self._tag_wrapper is not None:
+                self._tag_wrapper.destroy()
+            self.tag_list = None
+            self._tag_wrapper = None
+        if self.tag_list is not None:
+            return
+
+        if many:
+            wrapper = customtkinter.CTkFrame(self._tags_panel, corner_radius=6)
+            wrapper.grid(row=1, column=0, sticky="ew", padx=10, pady=(0, 4))
+            wrapper.pack_propagate(False)
+            wrapper.configure(height=170)
+
+            self.tag_list = customtkinter.CTkScrollableFrame(wrapper, fg_color="transparent")
+            self.tag_list.pack(fill="both", expand=True)
+            self._tag_wrapper = wrapper
+        else:
+            self.tag_list = customtkinter.CTkFrame(self._tags_panel, corner_radius=6)
+            self.tag_list.grid(row=1, column=0, sticky="ew", padx=10, pady=(0, 4))
+            self._tag_wrapper = None
+
+        self.tag_list.grid_columnconfigure(0, weight=1)
 
     # ------------------------------------------------------------------
     # Actions
