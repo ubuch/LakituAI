@@ -14,6 +14,8 @@ from pathlib import Path
 
 import customtkinter
 
+from lakituai.gui.hardware import get_total_vram_gb, vram_warning_message
+
 ASSETS_DIR = Path(__file__).resolve().parent / "assets"
 WELCOME_IMAGE = ASSETS_DIR / "chat_welcome.png"
 WELCOME_IMAGE_WIDTH = 240
@@ -76,6 +78,19 @@ class ChatTab(customtkinter.CTkFrame):
         )
         self.chat_send_button.grid(row=1, column=1, padx=(0, 10), pady=(0, 10))
 
+        # Low-VRAM warning, shown only below the input bar when needed
+        self.vram_warning = customtkinter.CTkLabel(
+            self,
+            text="",
+            text_color="#e05d5d",
+            font=customtkinter.CTkFont(size=12),
+            anchor="w",
+            justify="left",
+        )
+        self.vram_warning.grid(row=2, column=0, columnspan=2, sticky="ew", padx=10, pady=(0, 10))
+
+        self._show_vram_warning()
+
         self.chat_entry.focus_set()
 
     def _load_welcome_image(self):
@@ -96,6 +111,14 @@ class ChatTab(customtkinter.CTkFrame):
             )
         except Exception:
             return None
+
+    def _show_vram_warning(self):
+        """Show a red warning below the input bar if VRAM is too low."""
+        message = vram_warning_message(get_total_vram_gb())
+        if message:
+            self.vram_warning.configure(text=f"⚠ {message}")
+        else:
+            self.vram_warning.grid_forget()
 
     def _append_chat(self, role: str, message: str):
         self._message_count += 1
