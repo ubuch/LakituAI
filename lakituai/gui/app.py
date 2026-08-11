@@ -136,6 +136,7 @@ class App(customtkinter.CTk):
         self.title("LakituAI")
         self.geometry("1100x700")
         self.minsize(700, 480)
+        self._set_window_icon()
 
         self._sidebar_expanded = True
         self._current_tab = 0
@@ -148,6 +149,21 @@ class App(customtkinter.CTk):
         self._build_pages()
 
         self._select_tab(0)
+
+    def _set_window_icon(self):
+        """Set the app logo as the window icon (title bar + taskbar)."""
+        logo_path = ASSETS_DIR / "logo.png"
+        if not logo_path.exists():
+            return
+        try:
+            from PIL import Image, ImageTk
+
+            size = 128
+            img = Image.open(logo_path).resize((size, size))
+            self._icon_image = ImageTk.PhotoImage(img)
+            self.iconphoto(True, self._icon_image)
+        except Exception:
+            pass
 
     def _build_main_layout(self):
         """Split the window into a sidebar (left) and a content area."""
