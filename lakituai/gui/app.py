@@ -21,6 +21,7 @@ from PIL import Image
 from lakituai.gui.chat_tab import ChatTab
 from lakituai.gui.players_tab import PlayersTab
 from lakituai.gui.race_summary_tab import RaceSummaryTab
+from lakituai.gui.wars_tab import WarsTab
 
 ASSETS_DIR = Path(__file__).resolve().parent / "assets"
 
@@ -223,6 +224,7 @@ class App(customtkinter.CTk):
         # Each tab lives in its own module; build them here in order.
         ChatTab(self.pages["Chat"], self.chat_session).pack(fill="both", expand=True)
         RaceSummaryTab(self.pages["Race Summary"]).pack(fill="both", expand=True)
+        WarsTab(self.pages["Wars"]).pack(fill="both", expand=True)
         PlayersTab(self.pages["Players"]).pack(fill="both", expand=True)
 
     def _toggle_sidebar(self):
