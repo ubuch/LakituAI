@@ -129,6 +129,77 @@ class PersistenceTests(unittest.TestCase):
         self.assertIn("ne", team_standings)
         self.assertEqual(team_standings["ne"], 15)
 
+    def _make_result(self, name, position, points):
+        return logic.ScoreboardRowResult(
+            row_number=position, points=points, ocr_text=name,
+            normalized_text=name, matched_player=name,
+            points_recipient=name, match_score=100.0, match_source="players",
+        )
+
+    def test_get_standings_up_to_accumulates_through_race(self):
+        """Standings up to race N should only include races <= N."""
+        war_id = persistence.get_or_create_war("War 1", db_path=self.db_path)
+
+        persistence.save_race(
+            war_id=war_id, race_number=1, image_path="r1.jpg",
+            json_path="r1.json",
+            scoreboard_rows=[
+                self._make_result("ne PlayerA", 1, 15),
+                self._make_result("RK PlayerB", 2, 12),
+            ],
+            db_path=self.db_path, team_tags=("ne", "RK"),
+        )
+        persistence.save_race(
+            war_id=war_id, race_number=2, image_path="r2.jpg",
+            json_path="r2.json",
+            scoreboard_rows=[
+                self._make_result("RK PlayerB", 1, 15),
+                self._make_result("ne PlayerA", 2, 12),
+            ],
+            db_path=self.db_path, team_tags=("ne", "RK"),
+        )
+
+        # After race 1: only race 1 counts.
+        players_1 = persistence.get_player_standings_up_to(
+            war_id, 1, db_path=self.db_path
+        )
+        self.assertEqual(players_1, {"ne PlayerA": 15, "RK PlayerB": 12})
+
+        teams_1 = persistence.get_team_standings_up_to(war_id, 1, db_path=self.db_path)
+        self.assertEqual(teams_1, {"ne": 15, "RK": 12})
+
+        # After race 2: both races are summed.
+        players_2 = persistence.get_player_standings_up_to(
+            war_id, 2, db_path=self.db_path
+        )
+        self.assertEqual(players_2, {"ne PlayerA": 27, "RK PlayerB": 27})
+
+        teams_2 = persistence.get_team_standings_up_to(war_id, 2, db_path=self.db_path)
+        self.assertEqual(teams_2, {"ne": 27, "RK": 27})
+
+    def test_get_standings_up_to_beyond_last_race_matches_whole_war(self):
+        """Standings up to a race beyond the last one equal whole-war totals."""
+        war_id = persistence.get_or_create_war("War 1", db_path=self.db_path)
+
+        persistence.save_race(
+            war_id=war_id, race_number=1, image_path="r1.jpg",
+            json_path="r1.json",
+            scoreboard_rows=[self._make_result("ne PlayerA", 1, 15)],
+            db_path=self.db_path, team_tags=("ne",),
+        )
+        persistence.update_standings(
+            war_id,
+            [self._make_result("ne PlayerA", 1, 15)],
+            team_tags=("ne",),
+            db_path=self.db_path,
+        )
+
+        up_to = persistence.get_player_standings_up_to(
+            war_id, 99, db_path=self.db_path
+        )
+        whole = persistence.get_player_standings(war_id, db_path=self.db_path)
+        self.assertEqual(up_to, whole)
+
     def test_save_race_stores_team_results(self):
         """Saving a race should store per-team points and net result."""
         war_id = persistence.get_or_create_war("War 1", db_path=self.db_path)

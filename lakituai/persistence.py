@@ -346,6 +346,82 @@ def get_team_standings(
     return {tag: points for tag, points in results}
 
 
+def get_player_standings_up_to(
+    war_id: int,
+    race_number: int,
+    db_path: Path = DB_PATH,
+) -> dict[str, int]:
+    """Get cumulative player points for a war up to and including a race.
+
+    Unlike get_player_standings (whole-war totals), this aggregates only the
+    races with race_number <= the given one, so the standings evolve as the
+    war progresses and only the last race shows the final standings.
+
+    Args:
+        war_id: ID of the war.
+        race_number: Cumulative ceiling (inclusive).
+        db_path: Path to SQLite database.
+
+    Returns:
+        Dict mapping player name to total points, sorted by points descending.
+    """
+    conn = sqlite3.connect(str(db_path))
+    cursor = conn.cursor()
+
+    cursor.execute(
+        """
+        SELECT rr.player_name, SUM(rr.points) AS total
+        FROM race_results rr
+        JOIN races r ON rr.race_id = r.id
+        WHERE r.war_id = ? AND r.race_number <= ?
+        GROUP BY rr.player_name
+        ORDER BY total DESC
+        """,
+        (war_id, race_number),
+    )
+    results = cursor.fetchall()
+    conn.close()
+
+    return {name: points for name, points in results}
+
+
+def get_team_standings_up_to(
+    war_id: int,
+    race_number: int,
+    db_path: Path = DB_PATH,
+) -> dict[str, int]:
+    """Get cumulative team points for a war up to and including a race.
+
+    Same per-race ceiling semantics as get_player_standings_up_to.
+
+    Args:
+        war_id: ID of the war.
+        race_number: Cumulative ceiling (inclusive).
+        db_path: Path to SQLite database.
+
+    Returns:
+        Dict mapping team tag to total points, sorted by points descending.
+    """
+    conn = sqlite3.connect(str(db_path))
+    cursor = conn.cursor()
+
+    cursor.execute(
+        """
+        SELECT tr.team_tag, SUM(tr.points) AS total
+        FROM team_race_results tr
+        JOIN races r ON tr.race_id = r.id
+        WHERE r.war_id = ? AND r.race_number <= ?
+        GROUP BY tr.team_tag
+        ORDER BY total DESC
+        """,
+        (war_id, race_number),
+    )
+    results = cursor.fetchall()
+    conn.close()
+
+    return {tag: points for tag, points in results}
+
+
 def get_races_played(
     war_id: int,
     db_path: Path = DB_PATH,
