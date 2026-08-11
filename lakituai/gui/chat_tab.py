@@ -3,11 +3,20 @@
 The user talks to the LakituAI assistant through a ChatSession. The
 session is created once in App (so the conversation survives tab
 switches) and passed in here.
+
+While the conversation is empty, a centered welcome screen (image +
+greeting text) is shown instead of the message history, so the tab
+does not look blank on first open.
 """
 
 import threading
+from pathlib import Path
 
 import customtkinter
+
+ASSETS_DIR = Path(__file__).resolve().parent / "assets"
+WELCOME_IMAGE = ASSETS_DIR / "chat_welcome.png"
+WELCOME_IMAGE_WIDTH = 240
 
 
 class ChatTab(customtkinter.CTkFrame):
@@ -16,6 +25,7 @@ class ChatTab(customtkinter.CTkFrame):
     def __init__(self, master, chat_session):
         super().__init__(master, fg_color="transparent")
         self.chat_session = chat_session
+        self._message_count = 0
         self._build()
 
     def _build(self):
@@ -27,6 +37,33 @@ class ChatTab(customtkinter.CTkFrame):
         self.chat_history.grid(
             row=0, column=0, columnspan=2, padx=10, pady=(10, 5), sticky="nsew"
         )
+
+        # Welcome screen, shown only while there are no messages yet
+        self.welcome = customtkinter.CTkFrame(self, fg_color="transparent")
+        self.welcome.grid(row=0, column=0, columnspan=2, sticky="nsew")
+        self.welcome.grid_rowconfigure(0, weight=1)
+        self.welcome.grid_rowconfigure(3, weight=1)
+        self.welcome.grid_columnconfigure(0, weight=1)
+
+        image = self._load_welcome_image()
+        if image is not None:
+            self.welcome_image = customtkinter.CTkLabel(
+                self.welcome, image=image, text=""
+            )
+            self.welcome_image.grid(row=1, column=0, pady=(0, 12))
+
+        customtkinter.CTkLabel(
+            self.welcome,
+            text="LakituAI",
+            font=customtkinter.CTkFont(size=30, weight="bold"),
+        ).grid(row=2, column=0, pady=(0, 6))
+
+        customtkinter.CTkLabel(
+            self.welcome,
+            text="Ask me about races, players, or your war standings.",
+            font=customtkinter.CTkFont(size=14),
+            text_color="gray",
+        ).grid(row=3, column=0)
 
         # Chat entry
         self.chat_entry = customtkinter.CTkEntry(self, placeholder_text="Ask LakituAI")
@@ -41,7 +78,30 @@ class ChatTab(customtkinter.CTkFrame):
 
         self.chat_entry.focus_set()
 
+    def _load_welcome_image(self):
+        """Load the welcome logo, or None if no image asset exists."""
+        if not WELCOME_IMAGE.exists():
+            return None
+        try:
+            from PIL import Image
+
+            img = Image.open(WELCOME_IMAGE)
+            w, h = img.size
+            ratio = h / w
+            size = (WELCOME_IMAGE_WIDTH, round(WELCOME_IMAGE_WIDTH * ratio))
+            return customtkinter.CTkImage(
+                light_image=img,
+                dark_image=img,
+                size=size,
+            )
+        except Exception:
+            return None
+
     def _append_chat(self, role: str, message: str):
+        self._message_count += 1
+        if self._message_count == 1:
+            # First message: swap the welcome screen for the history.
+            self.welcome.grid_forget()
         self.chat_history.configure(state="normal")
         self.chat_history.insert("end", f"{role}: {message}\n\n")
         self.chat_history.configure(state="disabled")
