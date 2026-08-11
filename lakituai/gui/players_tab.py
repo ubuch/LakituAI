@@ -123,8 +123,11 @@ class PlayersTab(customtkinter.CTkFrame):
         self.title_label.configure(text=f"Players ({len(self.players)})")
 
         tags = self.team_tags or ["(none)"]
+        current = self.add_tag_menu.get()
         self.add_tag_menu.configure(values=tags)
-        if self.team_tags:
+        if current in tags:
+            self.add_tag_menu.set(current)
+        elif self.team_tags:
             self.add_tag_menu.set(self.team_tags[0])
 
         self._render_players()
