@@ -13,8 +13,6 @@ yet, a Unicode symbol is used as fallback (chosen from DejaVu Sans so
 they render reliably on Linux).
 """
 
-from pathlib import Path
-
 import customtkinter
 from PIL import Image
 
@@ -22,8 +20,9 @@ from lakituai.gui.chat_tab import ChatTab
 from lakituai.gui.players_tab import PlayersTab
 from lakituai.gui.race_summary_tab import RaceSummaryTab
 from lakituai.gui.wars_tab import WarsTab
+from lakituai.runtime_paths import assets_dir
 
-ASSETS_DIR = Path(__file__).resolve().parent / "assets"
+ASSETS_DIR = assets_dir()
 
 # Icon and button sizing (shared by NavButton and App).
 ICON_IMAGE_SIZE = 36

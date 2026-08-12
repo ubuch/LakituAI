@@ -10,14 +10,14 @@ does not look blank on first open.
 """
 
 import threading
-from pathlib import Path
 
 import customtkinter
 
 from lakituai.chat.agents import get_model_status
 from lakituai.gui.hardware import get_total_vram_gb, vram_warning_message
+from lakituai.runtime_paths import assets_dir
 
-ASSETS_DIR = Path(__file__).resolve().parent / "assets"
+ASSETS_DIR = assets_dir()
 WELCOME_IMAGE = ASSETS_DIR / "chat_welcome.png"
 WELCOME_IMAGE_WIDTH = 240
 

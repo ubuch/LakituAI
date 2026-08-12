@@ -7,7 +7,9 @@ and providing a simple interface for war management.
 import json
 from pathlib import Path
 
-WAR_CONFIG_PATH = Path(__file__).parent.parent / "config" / "current_war.json"
+from lakituai import runtime_paths
+
+WAR_CONFIG_PATH = runtime_paths.user_data_dir() / "config" / "current_war.json"
 
 
 def load_current_war() -> str:

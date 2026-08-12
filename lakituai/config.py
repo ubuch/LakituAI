@@ -5,15 +5,18 @@ scoring rules. Supports loading from JSON files or using in-memory defaults.
 """
 
 import json
+import shutil
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Sequence
 
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
-CONFIG_DIR = PROJECT_ROOT / "config"
+from lakituai import runtime_paths
+
+CONFIG_DIR = runtime_paths.user_data_dir() / "config"
 BOTS_CONFIG_PATH = CONFIG_DIR / "bots.json"
 PLAYERS_CONFIG_PATH = CONFIG_DIR / "players.json"
 TEAM_TAGS_CONFIG_PATH = CONFIG_DIR / "team_tags.json"
+RULES_CONFIG_PATH = CONFIG_DIR / "settings.json"
 
 
 DEFAULT_BOTS = (
@@ -127,9 +130,6 @@ class GameConfig:
     races_per_war: int = 12
 
 
-RULES_CONFIG_PATH = CONFIG_DIR / "settings.json"
-
-
 def load_json_list(path: Path, fallback: Sequence[str]) -> Sequence[str]:
     """Load a JSON array from file, returning fallback if file doesn't exist."""
     if not path.exists():
@@ -230,6 +230,21 @@ def create_default_config_files() -> None:
     """
     save_json_list(BOTS_CONFIG_PATH, DEFAULT_BOTS)
     save_json_list(TEAM_TAGS_CONFIG_PATH, [])
+
+
+def seed_config_files() -> None:
+    """Seed default config files from the bundle on first run.
+
+    When frozen, the read-only ``bots.json`` shipped inside the executable is
+    copied into the per-user config directory so it can be edited later. Safe
+    to call at every startup; existing user files are never overwritten.
+    """
+    if not runtime_paths.is_frozen():
+        return
+    bundled = runtime_paths.bundle_dir() / "config" / "bots.json"
+    if bundled.exists() and not BOTS_CONFIG_PATH.exists():
+        CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(bundled, BOTS_CONFIG_PATH)
 
 
 def extract_team_tag_from_game_config(

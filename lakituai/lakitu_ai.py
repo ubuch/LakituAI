@@ -13,7 +13,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Callable, Optional
 
-from lakituai import logic, persistence, war_manager
+from lakituai import config, logic, persistence, war_manager
 
 # A scoreboard identical to the last saved race arriving within this window
 # (seconds) is considered a stream rewind, not a new race.
@@ -546,6 +546,7 @@ def chat_cmd() -> None:
 
 def gui_cmd() -> None:
     """Launch the desktop GUI."""
+    config.seed_config_files()
     from lakituai.gui.app import run_gui
 
     run_gui()
@@ -638,6 +639,7 @@ def reset_db_cmd() -> None:
 
 def main() -> None:
     """Main CLI entry point."""
+    config.seed_config_files()
     try:
         args = parse_arguments()
 

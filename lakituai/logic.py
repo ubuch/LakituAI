@@ -6,13 +6,13 @@ from pathlib import Path
 import cv2
 from rapidfuzz import process, fuzz
 
-from lakituai import config
+from lakituai import config, runtime_paths
 
 BASE_W = 1920
 BASE_H = 1080
 NUMBER_OF_ROWS = 12
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-RESOURCES_DIR = PROJECT_ROOT / "resources"
+RESOURCES_DIR = runtime_paths.user_data_dir() / "resources"
 SCREENSHOTS_DIR = RESOURCES_DIR / "screenshots"
 ROWS_DIR = RESOURCES_DIR / "rows"
 
