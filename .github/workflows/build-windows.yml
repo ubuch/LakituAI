@@ -39,11 +39,13 @@ jobs:
       - name: Install Inno Setup
         run: |
           choco install innosetup -y --no-progress
-          echo "ISCC=$(ls 'C:\Program Files (x86)\Inno Setup 6\ISCC.exe')" >> $env:GITHUB_ENV
+          $iscc = Get-ChildItem 'C:\Program Files (x86)\Inno Setup*\ISCC.exe' | Select-Object -First 1
+          if (-not $iscc) { Write-Error 'ISCC.exe not found' }
+          "ISCC_PATH=$($iscc.FullName)" >> $env:GITHUB_ENV
 
       - name: Compile installer
         run: |
-          & $env:ISCC.exe packaging\installer.iss
+          & "$env:ISCC_PATH" "packaging\installer.iss"
 
       - name: Upload installer
         uses: actions/upload-artifact@v4
