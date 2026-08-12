@@ -10,6 +10,7 @@
 #define MyAppPublisher "LakituAI"
 
 [Setup]
+; Stable AppId so re-running the installer upgrades an existing install.
 AppId={{D29F6C4E-8A3B-4B2F-9C1E-LAKITUAI00001}}
 AppName={#MyAppName}
 AppVersion={#MyAppVersion}
@@ -26,8 +27,9 @@ WizardStyle=modern
 PrivilegesRequired=admin
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
-; Allow the user to disable the Ollama download
-DisableWelcomePage=no
+; The uninstaller deletes whatever the user selects (data/model) via [Code].
+; Files that persist in {app} are removed automatically by Inno Setup.
+UninstallDisplayName={#MyAppName}
 
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"
@@ -38,8 +40,10 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{
 [Files]
 ; PyInstaller onedir output (all DLLs, PYD, assets, config)
 Source: "..\dist\LakituAI\*"; DestDir: "{app}"; Flags: recursesubdirs createallsubdirs ignoreversion
-; Helper script for optional Ollama setup (bundled, run at install time)
-Source: "installer\install_ollama.ps1"; DestDir: "{tmp}"; Flags: dontcopy
+; Helper script for optional Ollama setup. Copied to {tmp} during install so
+; the [Run] step below can execute it (no `dontcopy`, which needs a manual
+; ExtractTemporaryFile call).
+Source: "installer\install_ollama.ps1"; DestDir: "{tmp}"
 
 [Icons]
 Name: "{autoprograms}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"
@@ -55,6 +59,8 @@ var
   OllamaPage: TWizardPage;
   OllamaCheckbox: TNewCheckBox;
   VramWarningShown: Boolean;
+  UninstallDataCheckbox: TNewCheckBox;
+  UninstallModelCheckbox: TNewCheckBox;
 
 function GetTotalVramMb(): Integer;
 var
@@ -151,4 +157,88 @@ begin
   OllamaCheckbox.Width := OllamaPage.SurfaceWidth;
   OllamaCheckbox.Caption := 'Install Ollama and download the qwen3:4b chat model';
   OllamaCheckbox.Checked := not IsOllamaInstalled();
+end;
+
+// ---------------------------------------------------------------------------
+// Uninstaller: ask which optional data to remove, then delete it.
+// ---------------------------------------------------------------------------
+
+procedure InitializeUninstallProgressForm();
+var
+  Form: TSetupForm;
+  ContinueButton, CancelButton: TNewButton;
+  HeaderText: TNewStaticText;
+begin
+  // In silent mode (/VERYSILENT) there is no UI; skip the prompt and let
+  // CurUninstallStepChanged remove everything by default.
+  if UninstallSilent then
+    Exit;
+
+  Form := CreateCustomForm;
+  Form.Caption := 'Remove LakituAI data';
+  Form.ClientWidth := ScaleX(440);
+  Form.ClientHeight := ScaleY(260);
+  Form.Center;
+
+  HeaderText := TNewStaticText.Create(Form);
+  HeaderText.Parent := Form;
+  HeaderText.Left := ScaleX(20);
+  HeaderText.Top := ScaleY(16);
+  HeaderText.Width := ScaleX(400);
+  HeaderText.AutoSize := True;
+  HeaderText.WordWrap := True;
+  HeaderText.Caption := 'Select what to remove with LakituAI:';
+
+  UninstallDataCheckbox := TNewCheckBox.Create(Form);
+  UninstallDataCheckbox.Parent := Form;
+  UninstallDataCheckbox.Left := ScaleX(20);
+  UninstallDataCheckbox.Top := ScaleY(64);
+  UninstallDataCheckbox.Width := ScaleX(400);
+  UninstallDataCheckbox.Caption := 'Delete all LakituAI data (config, database, screenshots)';
+  UninstallDataCheckbox.Checked := True;
+
+  UninstallModelCheckbox := TNewCheckBox.Create(Form);
+  UninstallModelCheckbox.Parent := Form;
+  UninstallModelCheckbox.Left := ScaleX(20);
+  UninstallModelCheckbox.Top := ScaleY(104);
+  UninstallModelCheckbox.Width := ScaleX(400);
+  UninstallModelCheckbox.Caption := 'Remove the qwen3:4b chat model from Ollama';
+  UninstallModelCheckbox.Checked := True;
+
+  CancelButton := TNewButton.Create(Form);
+  CancelButton.Parent := Form;
+  CancelButton.Caption := 'Cancel';
+  CancelButton.Left := ScaleX(230);
+  CancelButton.Top := Form.ClientHeight - ScaleY(50);
+  CancelButton.Width := ScaleX(90);
+  CancelButton.ModalResult := mrCancel;
+  CancelButton.Cancel := True;
+
+  ContinueButton := TNewButton.Create(Form);
+  ContinueButton.Parent := Form;
+  ContinueButton.Caption := 'Uninstall';
+  ContinueButton.Left := CancelButton.Left + CancelButton.Width + ScaleX(8);
+  ContinueButton.Top := CancelButton.Top;
+  ContinueButton.Width := ScaleX(90);
+  ContinueButton.ModalResult := mrOk;
+  ContinueButton.Default := True;
+
+  if Form.ShowModal <> mrOk then
+    Abort;
+end;
+
+procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
+var
+  ResultCode: Integer;
+begin
+  if CurUninstallStep = usPostUninstall then
+  begin
+    // Silent uninstall removes everything; interactive honors the checkbox state.
+    if UninstallSilent or ((UninstallDataCheckbox <> nil) and UninstallDataCheckbox.Checked) then
+      DelTree(ExpandConstant('{userappdata}\LakituAI'), True, True, True);
+
+    // Remove the qwen3:4b chat model if requested (silent = always).
+    if UninstallSilent or ((UninstallModelCheckbox <> nil) and UninstallModelCheckbox.Checked) then
+      Exec('ollama', 'rm qwen3:4b', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+  end;
 end;
