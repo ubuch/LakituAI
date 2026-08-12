@@ -59,7 +59,7 @@ var
   DetectedVramMb: Integer;
   UninstallDataCheckbox: TNewCheckBox;
   UninstallModelCheckbox: TNewCheckBox;
-  OllamaProgressPage: TOutputProgressPage;
+  OllamaProgressPage: TOutputProgressWizardPage;
   OllamaRunning: Boolean;
   OllamaLog, OllamaDone, OllamaErr: String;
 
@@ -167,7 +167,7 @@ begin
   OllamaCheckbox.Checked := ((DetectedVramMb = 0) or (DetectedVramMb >= 6 * 1024)) and not IsOllamaInstalled();
 
   // Progress page shown while Ollama + the chat model are being set up.
-  OllamaProgressPage := CreateOutputProgressPage('Installing Ollama',
+  OllamaProgressPage := CreateOutputMarqueeProgressPage('Installing Ollama',
     'Setting up Ollama and the qwen3:4b chat model. This may take several minutes.');
 end;
 
@@ -185,8 +185,6 @@ begin
 
       OllamaRunning := True;
       OllamaProgressPage.Show;
-      OllamaProgressPage.StatusLabel.Caption := 'Downloading and installing Ollama + qwen3:4b. This can take several minutes...';
-      OllamaProgressPage.ProgressBar.Style := npbstMarquee;
 
       // Run synchronously (ewWaitUntilTerminated). Inno pumps messages during the
       // wait, so the progress bar animates and Cancel works; the page is hidden
