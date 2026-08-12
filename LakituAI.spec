@@ -37,7 +37,8 @@ datas += [
 
 a = Analysis(
     ["packaging/launcher.py"],
-    pathex=[],
+    # Include the repo root so the top-level `lakituai` package is collected.
+    pathex=[SPECPATH],
     binaries=binaries,
     datas=datas,
     hiddenimports=hiddenimports,

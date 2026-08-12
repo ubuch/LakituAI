@@ -60,7 +60,6 @@ var
   UninstallDataCheckbox: TNewCheckBox;
   UninstallModelCheckbox: TNewCheckBox;
   OllamaProgressPage: TOutputProgressPage;
-  OllamaTimer: TTimer;
   OllamaRunning: Boolean;
   OllamaLog, OllamaDone, OllamaErr: String;
 
@@ -172,62 +171,6 @@ begin
     'Setting up Ollama and the qwen3:4b chat model. This may take several minutes.');
 end;
 
-function GetLastLogLine(const Path: String): String;
-var
-  List: TStringList;
-  i: Integer;
-  s: String;
-begin
-  Result := '';
-  if not FileExists(Path) then
-    Exit;
-  List := TStringList.Create;
-  try
-    List.LoadFromFile(Path);
-    for i := List.Count - 1 downto 0 do
-    begin
-      s := Trim(StringReplace(List[i], #13, '', [rfReplaceAll]));
-      s := Trim(StringReplace(s, #10, '', [rfReplaceAll]));
-      if s <> '' then
-      begin
-        Result := s;
-        Exit;
-      end;
-    end;
-  finally
-    List.Free;
-  end;
-end;
-
-procedure OllamaTimerTick(Sender: TObject);
-var
-  Res: Integer;
-begin
-  if not OllamaRunning then
-    Exit;
-
-  if FileExists(OllamaErr) then
-  begin
-    OllamaRunning := False;
-    OllamaTimer.Enabled := False;
-    OllamaProgressPage.Hide;
-    MsgBox('Ollama setup did not complete. The application is installed but the ' +
-      'chat model was not downloaded. You can install Ollama and qwen3:4b later.',
-      mbError, MB_OK);
-    Exit;
-  end;
-
-  if FileExists(OllamaDone) then
-  begin
-    OllamaRunning := False;
-    OllamaTimer.Enabled := False;
-    OllamaProgressPage.Hide;
-    Exit;
-  end;
-
-  OllamaProgressPage.StatusLabel.Caption := GetLastLogLine(OllamaLog);
-end;
-
 procedure CurStepChanged(CurStep: TSetupStep);
 var
   Res: Integer;
@@ -242,18 +185,24 @@ begin
 
       OllamaRunning := True;
       OllamaProgressPage.Show;
-      OllamaProgressPage.StatusLabel.Caption := 'Preparing Ollama...';
+      OllamaProgressPage.StatusLabel.Caption := 'Downloading and installing Ollama + qwen3:4b. This can take several minutes...';
       OllamaProgressPage.ProgressBar.Style := npbstMarquee;
 
+      // Run synchronously (ewWaitUntilTerminated). Inno pumps messages during the
+      // wait, so the progress bar animates and Cancel works; the page is hidden
+      // as soon as the install finishes and the wizard proceeds.
       Exec('powershell.exe',
         '-NoProfile -ExecutionPolicy Bypass -File "' + ExpandConstant('{tmp}\install_ollama.ps1') +
         '" "' + OllamaLog + '" "' + OllamaDone + '" "' + OllamaErr + '"',
-        '', SW_HIDE, ewNoWait, Res);
+        '', SW_HIDE, ewWaitUntilTerminated, Res);
 
-      OllamaTimer := TTimer.Create(nil);
-      OllamaTimer.Interval := 500;
-      OllamaTimer.OnTimer := @OllamaTimerTick;
-      OllamaTimer.Enabled := True;
+      OllamaRunning := False;
+      OllamaProgressPage.Hide;
+
+      if FileExists(OllamaErr) then
+        MsgBox('Ollama setup did not complete. The application is installed but the ' +
+          'chat model was not downloaded. You can install Ollama and qwen3:4b later.',
+          mbError, MB_OK);
     end;
   end;
 end;
@@ -268,8 +217,6 @@ begin
     Exec('taskkill', '/f /im ollama.exe', '', SW_HIDE, ewWaitUntilTerminated, Res);
     Exec('ollama', 'rm qwen3:4b', '', SW_HIDE, ewWaitUntilTerminated, Res);
     OllamaRunning := False;
-    if OllamaTimer <> nil then
-      OllamaTimer.Enabled := False;
     OllamaProgressPage.Hide;
     // Roll back the application installation.
     Cancel := True;
