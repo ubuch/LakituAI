@@ -68,7 +68,6 @@ var
   ResultCode: Integer;
   List: TStringList;
   Mb: Int64;
-  Wmi, Item: Variant;
 begin
   Result := 0;
 
@@ -102,15 +101,35 @@ begin
 
   // Fallback: WMI Win32_VideoController. AdapterRAM is a UInt32, so values
   // near/above 4GB overflow; only trust values that look sane.
+  Result := QueryVideoControllerVramMb();
+end;
+
+function QueryVideoControllerVramMb(): Integer;
+var
+  Wmi, WbemObjectSet, WbemObject: Variant;
+  Enum: IEnumVariant;
+  Value: Cardinal;
+  Temp: OleVariant;
+  Raw: Int64;
+begin
+  Result := 0;
   try
-    Wmi := GetWMIObject('Win32_VideoController');
-    Item := Wmi.AdapterRAM;
-    if not VarIsNull(Item) then
+    Wmi := GetObject('winmgmts:{impersonationLevel=impersonate}!root\cimv2');
+    WbemObjectSet := Wmi.ExecQuery('SELECT AdapterRAM FROM Win32_VideoController');
+    Enum := IUnknown(WbemObjectSet._NewEnum) as IEnumVariant;
+    while Enum.Next(1, Temp, Value) = 0 do
     begin
-      Mb := Int64(Item);
-      // Overflowed uint32 (>4GB) produces a value > 0x7FFFFFFF or negative-ish.
-      if (Mb > 0) and (Mb < $7FFFFFFF) then
-        Result := Integer(Mb div (1024 * 1024));
+      WbemObject := Temp;
+      if not VarIsNull(WbemObject.AdapterRAM) then
+      begin
+        Raw := Int64(WbemObject.AdapterRAM);
+        // Overflowed uint32 (>4GB) yields a negative/garbage value.
+        if (Raw > 0) and (Raw < $7FFFFFFF) then
+        begin
+          Result := Integer(Raw div (1024 * 1024));
+          Break;
+        end;
+      end;
     end;
   except
   end;
