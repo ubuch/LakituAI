@@ -84,10 +84,14 @@ begin
         if List.Count > 0 then
         begin
           Line := Trim(List[0]);
-          if TryStrToInt64(Line, Mb) and (Mb > 0) then
-          begin
-            Result := Integer(Mb);
-            Exit;
+          try
+            Mb := StrToInt64(Line);
+            if Mb > 0 then
+            begin
+              Result := Integer(Mb);
+              Exit;
+            end;
+          except
           end;
         end;
       end;
