@@ -153,5 +153,45 @@ class ToolLoopCapTests(unittest.TestCase):
         self.assertEqual(reply, "Done")
 
 
+class ModelStatusTests(unittest.TestCase):
+    """Tests for get_model_status()."""
+
+    def test_ok_when_model_installed(self):
+        fake_models = [SimpleNamespace(model="qwen3:4b"), SimpleNamespace(model="llama3")]
+        with mock.patch(
+            "lakituai.chat.agents.ollama.list",
+            return_value=SimpleNamespace(models=fake_models),
+        ):
+            self.assertIsNone(agents.get_model_status())
+
+    def test_missing_model_when_not_installed(self):
+        fake_models = [SimpleNamespace(model="llama3")]
+        with mock.patch(
+            "lakituai.chat.agents.ollama.list",
+            return_value=SimpleNamespace(models=fake_models),
+        ):
+            message = agents.get_model_status()
+            self.assertIsNotNone(message)
+            self.assertIn("not installed", message)
+            self.assertIn(agents.MODEL, message)
+
+    def test_matches_qualified_model_names(self):
+        fake_models = [SimpleNamespace(model="qwen3:4b:latest")]
+        with mock.patch(
+            "lakituai.chat.agents.ollama.list",
+            return_value=SimpleNamespace(models=fake_models),
+        ):
+            self.assertIsNone(agents.get_model_status())
+
+    def test_error_when_ollama_unreachable(self):
+        with mock.patch(
+            "lakituai.chat.agents.ollama.list",
+            side_effect=ConnectionError("server down"),
+        ):
+            message = agents.get_model_status()
+            self.assertIsNotNone(message)
+            self.assertIn("not running", message)
+
+
 if __name__ == "__main__":
     unittest.main()

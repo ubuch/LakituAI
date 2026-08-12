@@ -84,6 +84,29 @@ on the setup process.
 MODEL = "qwen3:4b"
 
 
+def get_model_status() -> Optional[str]:
+    """Check whether the chat model is usable right now.
+
+    Returns:
+        None if the model is installed and Ollama is reachable, otherwise
+        a human-readable message describing what is wrong.
+    """
+    try:
+        installed = [m.model for m in ollama.list().models]
+    except Exception:
+        return (
+            "Chat is unavailable: Ollama is not running. "
+            "Start it (ollama serve) and try again."
+        )
+
+    if not any(name == MODEL or name.startswith(MODEL + ":") for name in installed):
+        return (
+            f"Chat is unavailable: the model '{MODEL}' is not installed. "
+            f"Install the Qwen model with: ollama pull {MODEL}"
+        )
+    return None
+
+
 def _unescape_unicode(value: str) -> str:
     """Decode literal \\uXXXX escape sequences (e.g. 'C\\u00e9sar' -> 'César').
 

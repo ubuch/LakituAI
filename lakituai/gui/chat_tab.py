@@ -14,6 +14,7 @@ from pathlib import Path
 
 import customtkinter
 
+from lakituai.chat.agents import get_model_status
 from lakituai.gui.hardware import get_total_vram_gb, vram_warning_message
 
 ASSETS_DIR = Path(__file__).resolve().parent / "assets"
@@ -91,6 +92,23 @@ class ChatTab(customtkinter.CTkFrame):
 
         self._show_vram_warning()
 
+        # Model availability status, shown only when the chat must be blocked
+        self.model_status = customtkinter.CTkLabel(
+            self,
+            text="",
+            text_color="#e05d5d",
+            font=customtkinter.CTkFont(size=12),
+            anchor="w",
+            justify="left",
+            wraplength=900,
+        )
+
+        self.retry_button = customtkinter.CTkButton(
+            self, text="↻ Retry", width=90, command=self._check_model_status
+        )
+
+        self._check_model_status()
+
         self.chat_entry.focus_set()
 
     def _load_welcome_image(self):
@@ -119,6 +137,39 @@ class ChatTab(customtkinter.CTkFrame):
             self.vram_warning.configure(text=f"⚠ {message}")
         else:
             self.vram_warning.grid_forget()
+
+    def _check_model_status(self):
+        """Check model availability in a thread, then block/unblock the chat."""
+        self.retry_button.configure(state="disabled", text="Checking…")
+        threading.Thread(target=self._check_model_status_worker, daemon=True).start()
+
+    def _check_model_status_worker(self):
+        if self.chat_session is None:
+            message = (
+                "Chat is unavailable: could not load the chatbot (Ollama)."
+            )
+        else:
+            try:
+                message = get_model_status()
+            except Exception as e:
+                message = f"Chat is unavailable: {e}"
+        self.after(0, lambda: self._apply_model_status(message))
+
+    def _apply_model_status(self, message):
+        """Enable the chat when the model is ready, or show a blocker message."""
+        self.retry_button.configure(state="normal", text="↻ Retry")
+
+        if message is None:
+            self.chat_entry.configure(state="normal")
+            self.chat_send_button.configure(state="normal")
+            self.model_status.grid_remove()
+            self.retry_button.grid_remove()
+        else:
+            self.chat_entry.configure(state="disabled")
+            self.chat_send_button.configure(state="disabled")
+            self.model_status.configure(text=message)
+            self.model_status.grid(row=3, column=0, sticky="ew", padx=10, pady=(0, 10))
+            self.retry_button.grid(row=3, column=1, padx=(0, 10), pady=(0, 10))
 
     def _append_chat(self, role: str, message: str):
         self._message_count += 1
