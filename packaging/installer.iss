@@ -51,8 +51,6 @@ Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: de
 
 [Run]
 Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchProgram,{#StringChange(MyAppName, '&', '&&')}}"; Flags: nowait postinstall skipifsilent
-; Optional: install Ollama + qwen3:4b (only if the user checked it)
-Filename: "powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -File ""{tmp}\install_ollama.ps1"""; Flags: runhidden; StatusMsg: "Setting up Ollama and chat model..."; Check: ShouldInstallOllama
 
 [Code]
 var
@@ -61,6 +59,10 @@ var
   DetectedVramMb: Integer;
   UninstallDataCheckbox: TNewCheckBox;
   UninstallModelCheckbox: TNewCheckBox;
+  OllamaProgressPage: TOutputProgressPage;
+  OllamaTimer: TTimer;
+  OllamaRunning: Boolean;
+  OllamaLog, OllamaDone, OllamaErr: String;
 
 function QueryVideoControllerVramMb(): Integer;
 var
@@ -164,6 +166,115 @@ begin
   // Default to installing only when there is enough VRAM (or VRAM is unknown)
   // and Ollama isn't already present.
   OllamaCheckbox.Checked := ((DetectedVramMb = 0) or (DetectedVramMb >= 6 * 1024)) and not IsOllamaInstalled();
+
+  // Progress page shown while Ollama + the chat model are being set up.
+  OllamaProgressPage := CreateOutputProgressPage('Installing Ollama',
+    'Setting up Ollama and the qwen3:4b chat model. This may take several minutes.');
+end;
+
+function GetLastLogLine(const Path: String): String;
+var
+  List: TStringList;
+  i: Integer;
+  s: String;
+begin
+  Result := '';
+  if not FileExists(Path) then
+    Exit;
+  List := TStringList.Create;
+  try
+    List.LoadFromFile(Path);
+    for i := List.Count - 1 downto 0 do
+    begin
+      s := Trim(StringReplace(List[i], #13, '', [rfReplaceAll]));
+      s := Trim(StringReplace(s, #10, '', [rfReplaceAll]));
+      if s <> '' then
+      begin
+        Result := s;
+        Exit;
+      end;
+    end;
+  finally
+    List.Free;
+  end;
+end;
+
+procedure OllamaTimerTick(Sender: TObject);
+var
+  Res: Integer;
+begin
+  if not OllamaRunning then
+    Exit;
+
+  if FileExists(OllamaErr) then
+  begin
+    OllamaRunning := False;
+    OllamaTimer.Enabled := False;
+    OllamaProgressPage.Hide;
+    MsgBox('Ollama setup did not complete. The application is installed but the ' +
+      'chat model was not downloaded. You can install Ollama and qwen3:4b later.',
+      mbError, MB_OK);
+    Exit;
+  end;
+
+  if FileExists(OllamaDone) then
+  begin
+    OllamaRunning := False;
+    OllamaTimer.Enabled := False;
+    OllamaProgressPage.Hide;
+    Exit;
+  end;
+
+  OllamaProgressPage.StatusLabel.Caption := GetLastLogLine(OllamaLog);
+end;
+
+procedure CurStepChanged(CurStep: TSetupStep);
+var
+  Res: Integer;
+begin
+  if CurStep = ssPostInstall then
+  begin
+    if ShouldInstallOllama() then
+    begin
+      OllamaLog := ExpandConstant('{tmp}\ollama_setup.log');
+      OllamaDone := ExpandConstant('{tmp}\ollama_done.ok');
+      OllamaErr := ExpandConstant('{tmp}\ollama_error.err');
+
+      OllamaRunning := True;
+      OllamaProgressPage.Show;
+      OllamaProgressPage.StatusLabel.Caption := 'Preparing Ollama...';
+      OllamaProgressPage.ProgressBar.Style := npbstMarquee;
+
+      Exec('powershell.exe',
+        '-NoProfile -ExecutionPolicy Bypass -File "' + ExpandConstant('{tmp}\install_ollama.ps1') +
+        '" "' + OllamaLog + '" "' + OllamaDone + '" "' + OllamaErr + '"',
+        '', SW_HIDE, ewNoWait, Res);
+
+      OllamaTimer := TTimer.Create(nil);
+      OllamaTimer.Interval := 500;
+      OllamaTimer.OnTimer := @OllamaTimerTick;
+      OllamaTimer.Enabled := True;
+    end;
+  end;
+end;
+
+procedure CancelButtonClick(CurPageID: Integer; var Cancel, Confirm: Boolean);
+var
+  Res: Integer;
+begin
+  if OllamaRunning then
+  begin
+    // Stop the download and remove any partially pulled model.
+    Exec('taskkill', '/f /im ollama.exe', '', SW_HIDE, ewWaitUntilTerminated, Res);
+    Exec('ollama', 'rm qwen3:4b', '', SW_HIDE, ewWaitUntilTerminated, Res);
+    OllamaRunning := False;
+    if OllamaTimer <> nil then
+      OllamaTimer.Enabled := False;
+    OllamaProgressPage.Hide;
+    // Roll back the application installation.
+    Cancel := True;
+    Confirm := False;
+  end;
 end;
 
 // ---------------------------------------------------------------------------
