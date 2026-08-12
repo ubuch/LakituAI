@@ -181,11 +181,9 @@ begin
   if UninstallSilent then
     Exit;
 
-  Form := CreateCustomForm;
+  Form := CreateCustomForm(ScaleX(440), ScaleY(260), False, False);
   Form.Caption := 'Remove LakituAI data';
-  Form.ClientWidth := ScaleX(440);
-  Form.ClientHeight := ScaleY(260);
-  Form.Center;
+  Form.CenterOnShow := True;
 
   HeaderText := TNewStaticText.Create(Form);
   HeaderText.Parent := Form;
