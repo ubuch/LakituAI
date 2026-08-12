@@ -1,4 +1,4 @@
-name: Build Windows exe
+name: Build Windows exe + installer
 
 # Runs only when manually triggered (Actions tab -> "Run workflow").
 # No minutes are spent on pushes; add `workflow_dispatch` triggers only.
@@ -28,10 +28,27 @@ jobs:
       - name: Build with PyInstaller
         run: pyinstaller --clean --noconfirm LakituAI.spec
 
-      - name: Upload build artifact
+      - name: Upload build artifact (folder)
         uses: actions/upload-artifact@v4
         with:
           name: LakituAI-windows
           path: dist/LakituAI/
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Install Inno Setup
+        run: |
+          choco install innosetup -y --no-progress
+          echo "ISCC=$(ls 'C:\Program Files (x86)\Inno Setup 6\ISCC.exe')" >> $env:GITHUB_ENV
+
+      - name: Compile installer
+        run: |
+          & $env:ISCC.exe packaging\installer.iss
+
+      - name: Upload installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: LakituAI-Setup
+          path: installer-output/
           if-no-files-found: error
           retention-days: 14
