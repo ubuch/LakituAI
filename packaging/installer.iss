@@ -62,6 +62,8 @@ var
   UninstallDataCheckbox: TNewCheckBox;
   UninstallModelCheckbox: TNewCheckBox;
 
+function QueryVideoControllerVramMb(): Integer; forward;
+
 function GetTotalVramMb(): Integer;
 var
   TmpFile, Line: String;
