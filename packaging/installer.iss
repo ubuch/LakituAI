@@ -58,53 +58,9 @@ Filename: "powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -Fil
 var
   OllamaPage: TWizardPage;
   OllamaCheckbox: TNewCheckBox;
-  VramWarningShown: Boolean;
+  DetectedVramMb: Integer;
   UninstallDataCheckbox: TNewCheckBox;
   UninstallModelCheckbox: TNewCheckBox;
-
-function QueryVideoControllerVramMb(): Integer; forward;
-
-function GetTotalVramMb(): Integer;
-var
-  TmpFile, Line: String;
-  ResultCode: Integer;
-  List: TStringList;
-  Mb: Int64;
-begin
-  Result := 0;
-
-  // Primary: nvidia-smi (reliable for NVIDIA GPUs, handles >4GB correctly).
-  TmpFile := ExpandConstant('{tmp}\nvidiasmi.txt');
-  if Exec('cmd.exe', '/c nvidia-smi --query-gpu=memory.total --format=csv,noheader,nounits > "' + TmpFile + '"', '', SW_HIDE, ewWaitUntilTerminated, ResultCode) and (ResultCode = 0) then
-  begin
-    List := TStringList.Create;
-    try
-      if FileExists(TmpFile) then
-      begin
-        List.LoadFromFile(TmpFile);
-        if List.Count > 0 then
-        begin
-          Line := Trim(List[0]);
-          try
-            Mb := StrToInt64(Line);
-            if Mb > 0 then
-            begin
-              Result := Integer(Mb);
-              Exit;
-            end;
-          except
-          end;
-        end;
-      end;
-    finally
-      List.Free;
-    end;
-  end;
-
-  // Fallback: WMI Win32_VideoController. AdapterRAM is a UInt32, so values
-  // near/above 4GB overflow; only trust values that look sane.
-  Result := QueryVideoControllerVramMb();
-end;
 
 function QueryVideoControllerVramMb(): Integer;
 var
@@ -114,7 +70,7 @@ var
 begin
   Result := 0;
   try
-    Wmi := CreateObject('WbemScripting.SWbemLocator');
+    Wmi := CreateOleObject('WbemScripting.SWbemLocator');
     WbemObjectSet := Wmi.ConnectServer('', 'root\cimv2').ExecQuery('SELECT AdapterRAM FROM Win32_VideoController');
     for I := 0 to WbemObjectSet.Count - 1 do
     begin
@@ -122,7 +78,8 @@ begin
       if not VarIsNull(WbemObject.AdapterRAM) then
       begin
         Raw := Int64(WbemObject.AdapterRAM);
-        // Overflowed uint32 (>4GB) yields a negative/garbage value.
+        // AdapterRAM is a UInt32; values >= 4 GB overflow into negative/garbage,
+        // so only trust values that look sane.
         if (Raw > 0) and (Raw < $7FFFFFFF) then
         begin
           Result := Integer(Raw div (1024 * 1024));
@@ -134,25 +91,46 @@ begin
   end;
 end;
 
+function GetTotalVramMb(): Integer;
+var
+  TmpFile, Line: String;
+  ResultCode: Integer;
+  List: TStringList;
+  V: Integer;
+begin
+  Result := 0;
+
+  // Primary: nvidia-smi (reliable for NVIDIA GPUs; reports real total in MB
+  // even above 4 GB, unlike the overflowing WMI AdapterRAM field).
+  TmpFile := ExpandConstant('{tmp}\nvidiasmi.txt');
+  if Exec('cmd.exe', '/c nvidia-smi --query-gpu=memory.total --format=csv,noheader,nounits > "' + TmpFile + '"', '', SW_HIDE, ewWaitUntilTerminated, ResultCode) and (ResultCode = 0) then
+  begin
+    List := TStringList.Create;
+    try
+      if FileExists(TmpFile) then
+      begin
+        List.LoadFromFile(TmpFile);
+        if List.Count > 0 then
+        begin
+          Line := Trim(List[0]);
+          V := StrToIntDef(Line, 0);
+          if V > 0 then
+            Result := V;
+        end;
+      end;
+    finally
+      List.Free;
+    end;
+  end;
+
+  // Fallback: WMI Win32_VideoController (covers non-NVIDIA GPUs).
+  if Result = 0 then
+    Result := QueryVideoControllerVramMb();
+end;
+
 function ShouldInstallOllama(): Boolean;
 begin
   Result := OllamaCheckbox.Checked;
-end;
-
-procedure WarnLowVram();
-var
-  VramMb: Integer;
-begin
-  VramMb := GetTotalVramMb();
-  if VramMb = 0 then
-    Exit; // could not detect -> no warning
-  if (VramMb > 0) and (VramMb < 6 * 1024) then
-  begin
-    MsgBox('Low VRAM warning' + #13#10 + #13#10 +
-      'Your GPU has ' + IntToStr(VramMb div 1024) + ' GB of VRAM. The chat model ' +
-      '(qwen3:4b) needs about 6 GB to run fast. LakituAI will still work, but ' +
-      'chat responses may be slow.', mbInformation, MB_OK);
-  end;
 end;
 
 function IsOllamaInstalled(): Boolean;
@@ -164,11 +142,16 @@ end;
 
 procedure InitializeWizard();
 begin
-  // VRAM warning (only once) right after the wizard is created.
-  if not VramWarningShown then
+  // Detect VRAM once; warn if it's likely too low for the local chat model.
+  DetectedVramMb := GetTotalVramMb();
+  if (DetectedVramMb > 0) and (DetectedVramMb < 6 * 1024) then
   begin
-    WarnLowVram();
-    VramWarningShown := True;
+    MsgBox('Low VRAM warning' + #13#10 + #13#10 +
+      'Your GPU has about ' + IntToStr(DetectedVramMb div 1024) + ' GB of VRAM, but ' +
+      'the local chat model (qwen3:4b) needs ~6 GB to run well. It is not ' +
+      'recommended to install Ollama on this machine: chat responses will be very ' +
+      'slow or may fail. You can skip the Ollama option on the next page.',
+      mbInformation, MB_OK);
   end;
 
   // Optional Ollama setup page.
@@ -178,7 +161,9 @@ begin
   OllamaCheckbox.Parent := OllamaPage.Surface;
   OllamaCheckbox.Width := OllamaPage.SurfaceWidth;
   OllamaCheckbox.Caption := 'Install Ollama and download the qwen3:4b chat model';
-  OllamaCheckbox.Checked := not IsOllamaInstalled();
+  // Default to installing only when there is enough VRAM (or VRAM is unknown)
+  // and Ollama isn't already present.
+  OllamaCheckbox.Checked := ((DetectedVramMb = 0) or (DetectedVramMb >= 6 * 1024)) and not IsOllamaInstalled();
 end;
 
 // ---------------------------------------------------------------------------
