@@ -18,7 +18,7 @@ AppPublisher={#MyAppPublisher}
 DefaultDirName={autopf}\{#MyAppName}
 DefaultGroupName={#MyAppName}
 OutputBaseFilename=LakituAI-Setup
-OutputDir=installer-output
+OutputDir=..\installer-output
 SetupIconFile=..\packaging\logo.ico
 UninstallDisplayIcon={app}\{#MyAppExeName}
 Compression=lzma2
@@ -109,19 +109,16 @@ end;
 function QueryVideoControllerVramMb(): Integer;
 var
   Wmi, WbemObjectSet, WbemObject: Variant;
-  Enum: IEnumVariant;
-  Value: Cardinal;
-  Temp: OleVariant;
+  I: Integer;
   Raw: Int64;
 begin
   Result := 0;
   try
-    Wmi := GetObject('winmgmts:{impersonationLevel=impersonate}!root\cimv2');
-    WbemObjectSet := Wmi.ExecQuery('SELECT AdapterRAM FROM Win32_VideoController');
-    Enum := IUnknown(WbemObjectSet._NewEnum) as IEnumVariant;
-    while Enum.Next(1, Temp, Value) = 0 do
+    Wmi := CreateObject('WbemScripting.SWbemLocator');
+    WbemObjectSet := Wmi.ConnectServer('', 'root\cimv2').ExecQuery('SELECT AdapterRAM FROM Win32_VideoController');
+    for I := 0 to WbemObjectSet.Count - 1 do
     begin
-      WbemObject := Temp;
+      WbemObject := WbemObjectSet.ItemIndex(I);
       if not VarIsNull(WbemObject.AdapterRAM) then
       begin
         Raw := Int64(WbemObject.AdapterRAM);

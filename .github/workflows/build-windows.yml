@@ -36,9 +36,12 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
-      - name: Install Inno Setup
+      - name: Install Inno Setup 6
         run: |
-          choco install innosetup -y --no-progress
+          $url = "https://github.com/jrsoftware/issrc/releases/download/is-6_7_3/innosetup-6.7.3.exe"
+          $installer = "$env:RUNNER_TEMP\innosetup-6.7.3.exe"
+          Invoke-WebRequest -Uri $url -OutFile $installer
+          Start-Process -FilePath $installer -Args '/VERYSILENT /NORESTART /SUPPRESSMSGBOXES' -Wait
           $iscc = Get-ChildItem 'C:\Program Files (x86)\Inno Setup*\ISCC.exe' | Select-Object -First 1
           if (-not $iscc) { Write-Error 'ISCC.exe not found' }
           "ISCC_PATH=$($iscc.FullName)" >> $env:GITHUB_ENV
