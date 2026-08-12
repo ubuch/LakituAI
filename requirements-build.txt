@@ -1,0 +1,18 @@
+# Build-time dependencies for the Windows PyInstaller bundle.
+#
+# torch is intentionally NOT listed here: the runner installs the CPU-only
+# wheel first (pip install torch==2.13.0 --index-url https://download.pytorch.org/whl/cpu)
+# so the .exe ships the ~250 MB CPU build instead of the ~2.5 GB CUDA build.
+# torchvision is omitted because the app never imports it.
+#
+# Keep in sync with requirements.txt (used for development).
+
+opencv-python==5.0.0.93
+transformers==5.10.1
+pillow==12.3.0
+RapidFuzz==3.14.5
+tokenizers==0.22.2
+sentencepiece==0.2.2
+huggingface_hub==1.23.0
+ollama==0.6.2
+customtkinter==6.0.0
