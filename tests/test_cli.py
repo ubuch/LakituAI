@@ -61,6 +61,19 @@ class CLIArgumentsTests(unittest.TestCase):
             lakitu_ai.main()
         mock_cmd.assert_called_once_with()
 
+    def test_parse_arguments_with_feed(self):
+        """--feed should parse multiple image paths."""
+        with mock.patch("sys.argv", ["prog", "--feed", "a.png", "b.png"]):
+            args = lakitu_ai.parse_arguments()
+            self.assertEqual(args.feed, ["a.png", "b.png"])
+            self.assertIsNone(args.image_path)
+
+    @mock.patch("lakituai.lakitu_ai.feed_cmd")
+    def test_main_routes_feed(self, mock_cmd):
+        with mock.patch("sys.argv", ["prog", "--feed", "a.png"]):
+            lakitu_ai.main()
+        mock_cmd.assert_called_once_with(["a.png"])
+
 
 class CLIDuplicateDetectionTests(unittest.TestCase):
     """Tests for the rewind/duplicate detection helpers."""

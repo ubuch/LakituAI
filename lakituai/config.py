@@ -10,7 +10,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Sequence
 
-from lakituai import runtime_paths
+from lakituai import detect, runtime_paths
 
 CONFIG_DIR = runtime_paths.user_data_dir() / "config"
 BOTS_CONFIG_PATH = CONFIG_DIR / "bots.json"
@@ -107,6 +107,29 @@ DEFAULT_POINTS_BY_POSITION = (15, 12, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1)
 
 
 @dataclass
+class DaemonConfig:
+    """Background scoreboard watcher settings.
+
+    Attributes:
+        monitor: mss monitor index to capture (1 = first physical monitor).
+        poll_interval_s: seconds between screen polls.
+        gate_fraction: minimum fraction of the panel zone the scoreboard
+            block must cover to count as a scoreboard.
+        stability_eps: max mean-abs-diff between consecutive zone signatures
+            below which the panel counts as settled.
+        stability_frames: how many consecutive stable samples confirm capture.
+        cooldown_s: seconds to ignore the screen after a capture.
+    """
+
+    monitor: int = 1
+    poll_interval_s: float = 0.5
+    gate_fraction: float = detect.DEFAULT_GATE_FRACTION
+    stability_eps: float = detect.DEFAULT_STABILITY_EPS
+    stability_frames: int = detect.DEFAULT_STABILITY_FRAMES
+    cooldown_s: float = 90.0
+
+
+@dataclass
 class GameConfig:
     """Complete game configuration including players, bots, and scoring rules.
 
@@ -128,6 +151,7 @@ class GameConfig:
     match_threshold: int = 70
     bot_match_threshold: int = 90
     races_per_war: int = 12
+    daemon: DaemonConfig = field(default_factory=DaemonConfig)
 
 
 def load_json_list(path: Path, fallback: Sequence[str]) -> Sequence[str]:
@@ -177,11 +201,33 @@ def load_config(
     team_tags = load_json_list(team_tags_path, [])
 
     races_per_war = 12
+    daemon_cfg = DaemonConfig()
     if rules_path.exists():
         try:
             with open(rules_path, "r", encoding="utf-8") as f:
                 data = json.load(f)
+            if isinstance(data, dict):
                 races_per_war = data.get("races_per_war", 12)
+                daemon_data = data.get("daemon", {})
+                if isinstance(daemon_data, dict):
+                    daemon_cfg = DaemonConfig(
+                        monitor=int(daemon_data.get("monitor", daemon_cfg.monitor)),
+                        poll_interval_s=float(
+                            daemon_data.get("poll_interval_s", daemon_cfg.poll_interval_s)
+                        ),
+                        gate_fraction=float(
+                            daemon_data.get("gate_fraction", daemon_cfg.gate_fraction)
+                        ),
+                        stability_eps=float(
+                            daemon_data.get("stability_eps", daemon_cfg.stability_eps)
+                        ),
+                        stability_frames=int(
+                            daemon_data.get("stability_frames", daemon_cfg.stability_frames)
+                        ),
+                        cooldown_s=float(
+                            daemon_data.get("cooldown_s", daemon_cfg.cooldown_s)
+                        ),
+                    )
         except Exception:
             pass
 
@@ -191,6 +237,7 @@ def load_config(
         team_tags=team_tags,
         points_by_position=DEFAULT_POINTS_BY_POSITION,
         races_per_war=races_per_war,
+        daemon=daemon_cfg,
     )
 
 
@@ -215,9 +262,29 @@ def save_config(
     save_json_list(team_tags_path, config.team_tags)
 
     rules_path.parent.mkdir(parents=True, exist_ok=True)
+    existing: dict = {}
+    if rules_path.exists():
+        try:
+            with open(rules_path, "r", encoding="utf-8") as f:
+                loaded = json.load(f)
+            if isinstance(loaded, dict):
+                existing = loaded
+        except Exception:
+            pass
+
+    existing["races_per_war"] = config.races_per_war
+    existing["daemon"] = {
+        "monitor": config.daemon.monitor,
+        "poll_interval_s": config.daemon.poll_interval_s,
+        "gate_fraction": config.daemon.gate_fraction,
+        "stability_eps": config.daemon.stability_eps,
+        "stability_frames": config.daemon.stability_frames,
+        "cooldown_s": config.daemon.cooldown_s,
+    }
+
     try:
         with open(rules_path, "w", encoding="utf-8") as f:
-            json.dump({"races_per_war": config.races_per_war}, f, indent=2)
+            json.dump(existing, f, indent=2)
     except Exception:
         pass
 

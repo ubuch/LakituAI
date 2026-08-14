@@ -1,3 +1,11 @@
 {
-  "races_per_war": 12
+  "races_per_war": 12,
+  "daemon": {
+    "monitor": 1,
+    "poll_interval_s": 0.5,
+    "gate_fraction": 0.6,
+    "stability_eps": 4.0,
+    "stability_frames": 3,
+    "cooldown_s": 90.0
+  }
 }

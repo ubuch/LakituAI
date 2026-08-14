@@ -33,7 +33,7 @@ from typing import Callable, Optional
 import cv2
 import numpy as np
 
-from lakituai import detect, logic, runtime_paths
+from lakituai import config, detect, logic, runtime_paths
 
 DEFAULT_LOG_PATH = logic.RESOURCES_DIR / "daemon.log"
 DEFAULT_PID_PATH = logic.RESOURCES_DIR / "daemon.pid"
@@ -310,13 +310,29 @@ def _build_logger(log_path: Optional[Path], name: str = "lakituai.daemon") -> lo
     return logger
 
 
+def settings_from_config(cfg: Optional[config.GameConfig] = None) -> DaemonSettings:
+    """Build daemon settings from a loaded ``GameConfig`` (or defaults)."""
+
+    cfg = cfg or config.load_config()
+    d = cfg.daemon
+    return DaemonSettings(
+        monitor=d.monitor,
+        poll_interval_s=d.poll_interval_s,
+        gate_fraction=d.gate_fraction,
+        stability_eps=d.stability_eps,
+        stability_frames=d.stability_frames,
+        cooldown_s=d.cooldown_s,
+    )
+
+
 def run_daemon_main(settings: Optional[DaemonSettings] = None) -> None:
     """Entry point for ``--daemon``: lock, log, and run until interrupted.
 
+    Settings are read from ``config/settings.json`` unless overridden.
     Exits with code 1 if another daemon already owns the lock.
     """
 
-    settings = settings or DaemonSettings()
+    settings = settings or settings_from_config()
     logger = _build_logger(settings.log_path)
 
     if not acquire_lock(settings.pid_path):

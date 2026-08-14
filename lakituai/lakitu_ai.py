@@ -46,7 +46,8 @@ def parse_arguments() -> argparse.Namespace:
             "  python -m lakituai --add-team-tag RK\n"
             "  python -m lakituai --chat\n"
             "  python -m lakituai --daemon\n"
-            "  python -m lakituai --daemon-stop"
+            "  python -m lakituai --daemon-stop\n"
+            "  python -m lakituai --feed tmp/img1.png tmp/img2.png"
         ),
     )
 
@@ -144,6 +145,14 @@ def parse_arguments() -> argparse.Namespace:
         help="Stop a running background scoreboard watcher daemon",
     )
 
+    group.add_argument(
+        "--feed",
+        nargs="+",
+        metavar="IMG",
+        help="Run the scoreboard detector over static images and report "
+        "gate verdicts (no OCR, no DB)",
+    )
+
     # Save even if the screenshot looks like a repeated (rewound) scoreboard
     parser.add_argument(
         "--force",
@@ -177,12 +186,13 @@ def parse_arguments() -> argparse.Namespace:
         and args.add_team_tag is None
         and not args.daemon
         and not args.daemon_stop
+        and args.feed is None
     ):
         parser.error(
             "Image path required "
             "(or use --list-wars, --delete-war, --delete-wars, --delete-race, "
             "--reset-db, --chat, --gui, --list-players, --add-player, "
-            "--list-team-tags, --add-team-tag, --daemon, --daemon-stop)"
+            "--list-team-tags, --add-team-tag, --daemon, --daemon-stop, --feed)"
         )
     return args
 
@@ -582,6 +592,40 @@ def daemon_stop_cmd() -> None:
     sys.exit(daemon_module.stop_daemon())
 
 
+def feed_cmd(image_paths: list[str]) -> None:
+    """Run the scoreboard detector over static images (no OCR, no DB).
+
+    For each image reports the panel-zone size and the largest connected
+    saturated fraction vs the configured gate, so the detector can be
+    validated/calibrated against real screenshots without touching the screen.
+    """
+    import cv2
+
+    from lakituai import detect
+
+    gate = config.load_config().daemon.gate_fraction
+
+    print("SCOREBOARD DETECTOR FEED")
+    print("-" * 80)
+    for raw in image_paths:
+        path = validate_image_path(raw)
+        frame = cv2.imread(str(path))
+        if frame is None:
+            print(f"ERROR: could not read image: {path}", file=sys.stderr)
+            sys.exit(1)
+
+        zone = detect.crop_zone(frame)
+        fraction = detect.largest_cc_fraction(zone)
+        verdict = "SCOREBOARD" if fraction >= gate else "not scoreboard"
+        y1, y2, x1, x2 = detect.zone_rect(frame.shape)
+        print(
+            f"{path.name:45s} {frame.shape[1]:5d}x{frame.shape[0]:<4d} "
+            f"zone=({x1},{y1})-({x2},{y2}) frac={fraction:5.2f} "
+            f"gate={gate:.2f} -> {verdict}"
+        )
+    print("-" * 80)
+
+
 def list_players_cmd() -> None:
     """List all registered players."""
     from lakituai import player_management
@@ -714,6 +758,10 @@ def main() -> None:
 
         if args.daemon_stop:
             daemon_stop_cmd()
+            return
+
+        if args.feed is not None:
+            feed_cmd(args.feed)
             return
 
         if args.list_players:
