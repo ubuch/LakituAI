@@ -54,3 +54,5 @@ resources/rows
 resources/scoreboards
 resources/screenshots
 resources/wars.db
+resources/daemon.log
+resources/daemon.pid

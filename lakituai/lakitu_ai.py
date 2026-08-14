@@ -44,7 +44,9 @@ def parse_arguments() -> argparse.Namespace:
             "  python -m lakituai --add-player 'RK AxeeL'\n"
             "  python -m lakituai --list-team-tags\n"
             "  python -m lakituai --add-team-tag RK\n"
-            "  python -m lakituai --chat"
+            "  python -m lakituai --chat\n"
+            "  python -m lakituai --daemon\n"
+            "  python -m lakituai --daemon-stop"
         ),
     )
 
@@ -130,6 +132,18 @@ def parse_arguments() -> argparse.Namespace:
         help="Add a team tag (e.g., --add-team-tag RK)",
     )
 
+    group.add_argument(
+        "--daemon",
+        action="store_true",
+        help="Run the background scoreboard watcher daemon (auto OCR)",
+    )
+
+    group.add_argument(
+        "--daemon-stop",
+        action="store_true",
+        help="Stop a running background scoreboard watcher daemon",
+    )
+
     # Save even if the screenshot looks like a repeated (rewound) scoreboard
     parser.add_argument(
         "--force",
@@ -161,12 +175,14 @@ def parse_arguments() -> argparse.Namespace:
         and args.add_player is None
         and not args.list_team_tags
         and args.add_team_tag is None
+        and not args.daemon
+        and not args.daemon_stop
     ):
         parser.error(
             "Image path required "
             "(or use --list-wars, --delete-war, --delete-wars, --delete-race, "
             "--reset-db, --chat, --gui, --list-players, --add-player, "
-            "--list-team-tags, --add-team-tag)"
+            "--list-team-tags, --add-team-tag, --daemon, --daemon-stop)"
         )
     return args
 
@@ -552,6 +568,20 @@ def gui_cmd() -> None:
     run_gui()
 
 
+def daemon_cmd() -> None:
+    """Run the background scoreboard watcher daemon."""
+    from lakituai import daemon as daemon_module
+
+    daemon_module.run_daemon_main()
+
+
+def daemon_stop_cmd() -> None:
+    """Stop a running background scoreboard watcher daemon."""
+    from lakituai import daemon as daemon_module
+
+    sys.exit(daemon_module.stop_daemon())
+
+
 def list_players_cmd() -> None:
     """List all registered players."""
     from lakituai import player_management
@@ -676,6 +706,14 @@ def main() -> None:
 
         if args.gui:
             gui_cmd()
+            return
+
+        if args.daemon:
+            daemon_cmd()
+            return
+
+        if args.daemon_stop:
+            daemon_stop_cmd()
             return
 
         if args.list_players:

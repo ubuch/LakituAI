@@ -36,6 +36,31 @@ class CLIArgumentsTests(unittest.TestCase):
             args = lakitu_ai.parse_arguments()
             self.assertFalse(args.force)
 
+    def test_parse_arguments_with_daemon(self):
+        """--daemon should parse as a standalone command."""
+        with mock.patch("sys.argv", ["prog", "--daemon"]):
+            args = lakitu_ai.parse_arguments()
+            self.assertTrue(args.daemon)
+            self.assertIsNone(args.image_path)
+
+    def test_parse_arguments_with_daemon_stop(self):
+        """--daemon-stop should parse as a standalone command."""
+        with mock.patch("sys.argv", ["prog", "--daemon-stop"]):
+            args = lakitu_ai.parse_arguments()
+            self.assertTrue(args.daemon_stop)
+
+    @mock.patch("lakituai.lakitu_ai.daemon_cmd")
+    def test_main_routes_daemon(self, mock_cmd):
+        with mock.patch("sys.argv", ["prog", "--daemon"]):
+            lakitu_ai.main()
+        mock_cmd.assert_called_once_with()
+
+    @mock.patch("lakituai.lakitu_ai.daemon_stop_cmd")
+    def test_main_routes_daemon_stop(self, mock_cmd):
+        with mock.patch("sys.argv", ["prog", "--daemon-stop"]):
+            lakitu_ai.main()
+        mock_cmd.assert_called_once_with()
+
 
 class CLIDuplicateDetectionTests(unittest.TestCase):
     """Tests for the rewind/duplicate detection helpers."""
