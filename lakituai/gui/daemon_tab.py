@@ -1,8 +1,8 @@
-"""Daemon tab for the LakituAI GUI.
+"""Auto Capture tab for the LakituAI GUI.
 
-Lets the user start and stop the background scoreboard watcher straight from
-the app and shows whether it is currently running. Starting spawns the daemon
-as a separate process (``--daemon``); stopping uses the pid file the same way
+Lets the user turn the background screen watcher on and off straight from the
+app and shows whether it is currently active. Starting spawns the watcher as a
+separate process (``--daemon``); stopping uses the pid file the same way
 ``--daemon-stop`` does.
 """
 
@@ -23,7 +23,7 @@ STOPPED_COLOR = ("gray40", "gray60")
 
 
 def build_daemon_command() -> list[str]:
-    """Command that launches the daemon (source runs or frozen exe)."""
+    """Command that launches the background watcher (source or frozen exe)."""
 
     if runtime_paths.is_frozen():
         return [sys.executable, "--daemon"]
@@ -31,7 +31,7 @@ def build_daemon_command() -> list[str]:
 
 
 def daemon_running() -> bool:
-    """True when a live daemon process owns the pid file."""
+    """True when a live watcher process owns the pid file."""
 
     pid_path = daemon.DEFAULT_PID_PATH
     if not pid_path.exists():
@@ -44,10 +44,11 @@ def daemon_running() -> bool:
 
 
 class DaemonTab(customtkinter.CTkFrame):
-    """Start/stop the daemon and show its status."""
+    """On/off switch for the background watcher plus a status indicator."""
 
     def __init__(self, master):
         super().__init__(master, fg_color="transparent")
+        self._starting = False
         self._build()
         self._refresh_status()
         self.after(POLL_MS, self._poll)
@@ -73,20 +74,21 @@ class DaemonTab(customtkinter.CTkFrame):
             font=customtkinter.CTkFont(size=14),
             text_color=STOPPED_COLOR,
         )
-        self.status_label.grid(row=3, column=0, pady=(0, 12))
+        self.status_label.grid(row=3, column=0, pady=(6, 10))
 
-        self.toggle_button = customtkinter.CTkButton(
-            self, text="Start daemon", width=180, height=42, command=self._toggle
+        self.switch = customtkinter.CTkSwitch(
+            self,
+            text="App active",
+            font=customtkinter.CTkFont(size=16),
+            command=self._on_switch,
         )
-        self.toggle_button.grid(row=4, column=0, pady=(0, 12))
-        self._btn_fg = self.toggle_button.cget("fg_color")
-        self._btn_hover = self.toggle_button.cget("hover_color")
+        self.switch.grid(row=4, column=0, pady=(0, 12))
 
         self.explanation_label = customtkinter.CTkLabel(
             self,
-            text="Click Start to watch your screen. When the app detects a "
-            "scoreboard it takes a screenshot and saves it to the Screenshots "
-            "tab.",
+            text="Turn the app on to watch your screen. When a race "
+            "scoreboard appears, the app saves a screenshot to the "
+            "Screenshots tab.",
             wraplength=560,
             justify="center",
             text_color=("gray25", "gray75"),
@@ -103,25 +105,25 @@ class DaemonTab(customtkinter.CTkFrame):
             return
         w, h = fit_size(img.width, img.height, LOGO_BOX[0], LOGO_BOX[1])
         self.logo_label.configure(
-            image=customtkinter.CTkImage(
-                light_image=img, dark_image=img, size=(w, h)
-            )
+            image=customtkinter.CTkImage(light_image=img, dark_image=img, size=(w, h))
         )
 
     # ------------------------------------------------------------------
     # Status / actions
     # ------------------------------------------------------------------
 
-    def _toggle(self):
-        if daemon_running():
-            self._stop()
-        else:
-            self._start()
-
     def refresh(self):
         self._refresh_status()
 
+    def _on_switch(self):
+        if self.switch.get():
+            self._start()
+        else:
+            self._stop()
+
     def _start(self):
+        if daemon_running() or self._starting:
+            return
         cmd = build_daemon_command()
         kwargs: dict = {}
         if os.name == "nt":
@@ -130,38 +132,35 @@ class DaemonTab(customtkinter.CTkFrame):
             subprocess.Popen(
                 cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, **kwargs
             )
+            self._starting = True
         except OSError as exc:
             self.status_label.configure(
                 text=f"✗ Could not start: {exc}", text_color="#ff6b6b"
             )
-            return
+            self.switch.deselect()
         self._refresh_status()
 
     def _stop(self):
+        if not daemon_running():
+            return
         code = daemon.stop_daemon()
         if code != 0:
             self.status_label.configure(
-                text="✗ Could not stop daemon", text_color="#ff6b6b"
+                text="✗ Could not stop", text_color="#ff6b6b"
             )
         self._refresh_status()
 
     def _refresh_status(self):
         running = daemon_running()
         if running:
+            self._starting = False
+            self.switch.select()
             self.status_label.configure(
-                text="● Running — watching your screen",
-                text_color=RUNNING_COLOR,
-            )
-            self.toggle_button.configure(
-                text="Stop daemon", fg_color="#a52a2a", hover_color="#8b1a1a"
+                text="● Active — watching your screen", text_color=RUNNING_COLOR
             )
         else:
+            self.switch.deselect()
             self.status_label.configure(text="● Stopped", text_color=STOPPED_COLOR)
-            self.toggle_button.configure(
-                text="Start daemon",
-                fg_color=self._btn_fg,
-                hover_color=self._btn_hover,
-            )
 
     def _poll(self):
         self._refresh_status()

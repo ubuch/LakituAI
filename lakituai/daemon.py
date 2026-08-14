@@ -121,7 +121,26 @@ def dispatch_cli(
 
 
 def _process_alive(pid: int) -> bool:
-    """Best-effort check that a pid is still running (cross-platform)."""
+    """Best-effort check that a pid is still running (cross-platform).
+
+    ``os.kill(pid, 0)`` is only safe on POSIX: on Windows it *terminates* the
+    target process instead of probing it, so the Windows path uses the Win32
+    API (OpenProcess + GetExitCodeProcess == STILL_ACTIVE).
+    """
+
+    if os.name == "nt":
+        import ctypes
+
+        PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+        handle = ctypes.windll.kernel32.OpenProcess(
+            PROCESS_QUERY_LIMITED_INFORMATION, False, int(pid)
+        )
+        if not handle:
+            return False
+        code = ctypes.c_ulong()
+        ok = ctypes.windll.kernel32.GetExitCodeProcess(handle, ctypes.byref(code))
+        ctypes.windll.kernel32.CloseHandle(handle)
+        return bool(ok) and code.value == 259  # STILL_ACTIVE
 
     try:
         os.kill(pid, 0)

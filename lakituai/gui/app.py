@@ -127,7 +127,7 @@ class App(customtkinter.CTk):
         ("Wars", "⚔"),           # crossed swords
         ("Players", "☻"),        # smiling face
         ("Screenshots", "⛶"),    # picture frame
-        ("Daemon", "⚙"),         # gear
+        ("Auto Capture", "⚡"),   # lightning
     ]
     ICON_FONT_SIZE = 26
     SIDEBAR_COLLAPSED = 70
@@ -140,6 +140,10 @@ class App(customtkinter.CTk):
         self.geometry("1100x700")
         self.minsize(700, 480)
         self._set_window_icon()
+
+        # Closing the app must also stop the background watcher so a new
+        # session never doubles up on captures.
+        self.protocol("WM_DELETE_WINDOW", self._on_close)
 
         self._sidebar_expanded = True
         self._current_tab = 0
@@ -246,7 +250,7 @@ class App(customtkinter.CTk):
         WarsTab(self.pages["Wars"]).pack(fill="both", expand=True)
         PlayersTab(self.pages["Players"]).pack(fill="both", expand=True)
         ScreenshotsTab(self.pages["Screenshots"]).pack(fill="both", expand=True)
-        DaemonTab(self.pages["Daemon"]).pack(fill="both", expand=True)
+        DaemonTab(self.pages["Auto Capture"]).pack(fill="both", expand=True)
 
     def _toggle_sidebar(self):
         """Expand or collapse the sidebar, showing/hiding tab names."""
@@ -256,6 +260,16 @@ class App(customtkinter.CTk):
 
         for _, name in self.tab_buttons.items():
             name.show_text(self._sidebar_expanded)
+
+    def _on_close(self):
+        """Stop the background watcher (if any) and close the window."""
+        try:
+            from lakituai import daemon as daemon_module
+
+            daemon_module.stop_daemon()
+        except Exception:
+            pass
+        self.destroy()
 
     def _select_tab(self, index):
         """Show the selected page and highlight its sidebar button."""
