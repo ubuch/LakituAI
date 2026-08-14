@@ -17,8 +17,10 @@ import customtkinter
 from PIL import Image
 
 from lakituai.gui.chat_tab import ChatTab
+from lakituai.gui.daemon_tab import DaemonTab
 from lakituai.gui.players_tab import PlayersTab
 from lakituai.gui.race_summary_tab import RaceSummaryTab
+from lakituai.gui.screenshots_tab import ScreenshotsTab
 from lakituai.gui.wars_tab import WarsTab
 from lakituai.runtime_paths import assets_dir
 
@@ -124,6 +126,8 @@ class App(customtkinter.CTk):
         ("Race Summary", "⚑"),   # flag
         ("Wars", "⚔"),           # crossed swords
         ("Players", "☻"),        # smiling face
+        ("Screenshots", "⛶"),    # picture frame
+        ("Daemon", "⚙"),         # gear
     ]
     ICON_FONT_SIZE = 26
     SIDEBAR_COLLAPSED = 70
@@ -241,6 +245,8 @@ class App(customtkinter.CTk):
         RaceSummaryTab(self.pages["Race Summary"]).pack(fill="both", expand=True)
         WarsTab(self.pages["Wars"]).pack(fill="both", expand=True)
         PlayersTab(self.pages["Players"]).pack(fill="both", expand=True)
+        ScreenshotsTab(self.pages["Screenshots"]).pack(fill="both", expand=True)
+        DaemonTab(self.pages["Daemon"]).pack(fill="both", expand=True)
 
     def _toggle_sidebar(self):
         """Expand or collapse the sidebar, showing/hiding tab names."""
@@ -261,6 +267,15 @@ class App(customtkinter.CTk):
                 page.pack(fill="both", expand=True)
             else:
                 page.pack_forget()
+
+        # Pages may want to refresh their contents when shown (screenshot
+        # list, daemon status, standings).
+        refresh = getattr(self.pages[name], "refresh", None)
+        if callable(refresh):
+            try:
+                refresh()
+            except Exception:
+                pass
 
         self._style_tab_buttons()
 
