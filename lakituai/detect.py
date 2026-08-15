@@ -1,25 +1,29 @@
 """Screen-detection helpers for the LakituAI background daemon.
 
-The daemon watches the screen and must decide two things cheaply, every poll
-(~0.5s), without loading the OCR model:
+The daemon watches the screen and must decide cheaply, every poll (~0.5s),
+without loading the OCR model, whether a *fully-appeared* scoreboard is on
+screen. The panel is detected on a **single frame** (no motion heuristics, so
+it keeps working on live video where the panel shows subtle animation):
 
 1. **Is a scoreboard visible?**  Heuristic: the Mario Kart World results panel
-   is a large, *contiguous* block of saturated color that fills most of its
-   on-screen region.  Plain gameplay, even on colorful tracks, only produces
-   scattered saturated patches (the largest of which covers far less area).
+   is a large, *contiguous* block of saturated color that covers most of its
+   on-screen region (the gate).  Plain gameplay, even on colorful tracks, only
+   produces scattered saturated patches (largest covers far less area).
 
-2. **Is it done appearing?**  The panel "falls in" top-to-bottom; while it is
-   animating the frame content keeps changing.  We therefore require the panel
-   region to be *stable* (near-identical between consecutive polls) before we
-   save the screenshot.
+2. **Is it complete (settled)?**  The panel "falls in" top-to-bottom and the
+   last rows fill in last, so a partially-appeared panel has empty bands at
+   the bottom.  We therefore require *every* horizontal band of the zone to be
+   substantially saturated.  A settled panel passes this immediately; a panel
+   mid-animation (or the "a medias" state) fails until it is fully down.
 
 Both checks are resolution-independent: every coordinate is expressed as a
 fraction of the frame size, matching the proportional crop already used by
 ``lakituai.logic.upscale_img``.
 
-Calibration (against real samples in ``tmp/``): the scoreboard's largest
-connected saturated region covered 91-100% of the panel zone, while gameplay
-peaked at ~39%.  The gate threshold lives comfortably in that gap.
+Calibration (against real samples in ``tmp/``): a settled scoreboard covers
+~96-100% of the zone with every band >= ~85% saturated, gameplay peaks at
+~39%, and the "a medias" (bottom rows still missing) sample drops to a
+minimum band coverage of ~32%.
 """
 
 from __future__ import annotations
@@ -34,13 +38,12 @@ ZONE_Y1, ZONE_Y2 = 43 / 1080, 956 / 1080
 
 # Defaults; the daemon overrides these from config.
 DEFAULT_GATE_FRACTION = 0.60  # largest saturated blob must cover >= 60% of zone
-DEFAULT_STABILITY_EPS = 4.0  # mean abs diff between consecutive zone signatures
-DEFAULT_STABILITY_FRAMES = 3  # ...held for this many consecutive samples
+DEFAULT_COMPLETE_MIN_BAND = 0.50  # every band must be >= this saturated (0-1)
+BAND_COUNT = 12  # panel rows (Mario Kart World: 12 slots)
 _SATURATION = 0.45
 _VALUE = 110
 _CLOSE_ITER = 3
 _CLOSE_KERNEL = (5, 5)
-_SIG_SIZE = (32, 64)  # downscaled grayscale signature of the zone
 
 
 def zone_rect(frame_shape) -> tuple[int, int, int, int]:
@@ -118,29 +121,51 @@ def largest_cc_fraction(zone_bgr: np.ndarray) -> float:
     return float(largest) / float(total)
 
 
-def zone_signature(zone_gray: np.ndarray) -> np.ndarray:
-    """Return a small fixed-size grayscale signature of a zone for diffing."""
+def band_coverage(zone_bgr: np.ndarray, bands: int = BAND_COUNT) -> np.ndarray:
+    """Per-band fraction (0-1) of saturated pixels, top to bottom.
 
-    return cv2.resize(zone_gray, _SIG_SIZE, interpolation=cv2.INTER_AREA).astype(
-        np.float32
-    )
-
-
-def signature_diff(a: np.ndarray, b: np.ndarray) -> float:
-    """Mean absolute difference between two zone signatures (0 = identical)."""
-
-    if a.shape != b.shape:
-        b = cv2.resize(b, a.shape[::-1], interpolation=cv2.INTER_AREA).astype(
-            np.float32
-        )
-    return float(np.abs(a - b).mean())
-
-
-def is_scoreboard(zone_bgr: np.ndarray, gate_fraction: float = DEFAULT_GATE_FRACTION) -> bool:
-    """Cheap test for "a scoreboard is on screen".
-
-    True when the largest contiguous saturated region covers at least
-    ``gate_fraction`` of the panel zone.
+    Splits the zone into ``bands`` horizontal strips and reports how much of
+    each strip is saturated.  A fully-appeared scoreboard scores high in every
+    band; a panel that is still falling in (or stuck "a medias") has empty
+    strips where the rows have not arrived yet.
     """
 
-    return largest_cc_fraction(zone_bgr) >= gate_fraction
+    mask = saturated_mask(zone_bgr).astype(bool)
+    height = mask.shape[0]
+    coverage = np.empty(bands, dtype=float)
+    for i in range(bands):
+        band = mask[int(i * height / bands) : int((i + 1) * height / bands)]
+        coverage[i] = float(band.mean())
+    return coverage
+
+
+def is_complete_panel(
+    zone_bgr: np.ndarray, min_band: float = DEFAULT_COMPLETE_MIN_BAND
+) -> bool:
+    """True when every band of the zone is substantially saturated.
+
+    This is the "settled" check: it accepts a panel as soon as all its rows
+    are visibly present (so it fires on the very first frame of a settled
+    scoreboard, even on live video) and rejects partial states where the
+    bottom rows have not landed yet.
+    """
+
+    return float(band_coverage(zone_bgr).min()) >= min_band
+
+
+def is_scoreboard(
+    zone_bgr: np.ndarray,
+    gate_fraction: float = DEFAULT_GATE_FRACTION,
+    complete_min_band: float = DEFAULT_COMPLETE_MIN_BAND,
+) -> bool:
+    """Cheap single-frame test for "a complete scoreboard is on screen".
+
+    True when a contiguous saturated blob covers at least ``gate_fraction`` of
+    the zone (a scoreboard is present, not gameplay) **and** every horizontal
+    band is at least ``complete_min_band`` saturated (the panel has fully
+    appeared, not a partial "a medias" state).
+    """
+
+    return largest_cc_fraction(zone_bgr) >= gate_fraction and is_complete_panel(
+        zone_bgr, min_band=complete_min_band
+    )

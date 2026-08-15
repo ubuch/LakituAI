@@ -4,8 +4,7 @@
     "monitor": 1,
     "poll_interval_s": 0.5,
     "gate_fraction": 0.6,
-    "stability_eps": 4.0,
-    "stability_frames": 3,
+    "complete_min_band": 0.5,
     "cooldown_s": 90.0
   }
 }

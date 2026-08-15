@@ -7,8 +7,11 @@ existing CLI as a short-lived subprocess to run OCR. The heavy model
 at a few hundred MB of RAM.
 
 Detection reuses ``lakituai.detect``: the panel is a large contiguous
-saturated block (gate) that must remain stable across consecutive polls
-(stability) so we never capture mid "fall-in" animation.
+saturated block (gate) that must also be *complete* (every horizontal band
+saturated). Both checks run on a single frame, so the daemon captures the
+very first frame on which the scoreboard is fully down -- it does not need
+the screen to be motionless, which matters on live video where the panel
+keeps animating.
 
 The capture and dispatch steps are injected as callables so the class is
 fully testable without a screen or a real subprocess (and to support a
@@ -47,8 +50,7 @@ class DaemonSettings:
     monitor: int = 1
     poll_interval_s: float = 0.5
     gate_fraction: float = detect.DEFAULT_GATE_FRACTION
-    stability_eps: float = detect.DEFAULT_STABILITY_EPS
-    stability_frames: int = detect.DEFAULT_STABILITY_FRAMES
+    complete_min_band: float = detect.DEFAULT_COMPLETE_MIN_BAND
     cooldown_s: float = 90.0
     screenshots_dir: Optional[Path] = None
     log_path: Optional[Path] = DEFAULT_LOG_PATH
@@ -190,10 +192,12 @@ def _null_logger() -> logging.Logger:
 
 
 class ScoreboardDaemon:
-    """Poll loop driving the detect gate/stability state machine.
+    """Poll loop driving the detect gate/complete-panel state machine.
 
-    States: ``idle`` -> ``tracking`` (gate passed) -> capture+dispatch ->
-    ``cooldown`` -> ``idle``. Returns to ``idle`` if the gate drops mid-tracking.
+    States: ``idle`` -> capture+dispatch (complete scoreboard) -> ``cooldown``
+    -> ``wait_absent`` (the panel is still on screen after the cooldown; wait
+    until it disappears) -> ``idle``. The ``wait_absent`` leg prevents a
+    second capture of the same, still-visible panel when the cooldown expires.
     """
 
     def __init__(
@@ -210,8 +214,6 @@ class ScoreboardDaemon:
         self._logger = logger or _null_logger()
         self._clock = clock
         self._state = "idle"
-        self._last_sig: Optional[np.ndarray] = None
-        self._stable_count = 0
         self._cooldown_until = 0.0
         self.processed = 0
 
@@ -226,10 +228,9 @@ class ScoreboardDaemon:
         now = self._clock()
 
         if self._state == "cooldown":
-            if now >= self._cooldown_until:
-                self._state = "idle"
-            else:
+            if now < self._cooldown_until:
                 return None
+            self._state = "wait_absent"
 
         frame = self._capture()
         if frame is None:
@@ -238,36 +239,14 @@ class ScoreboardDaemon:
 
     def _observe(self, frame: np.ndarray, now: float) -> Optional[Path]:
         zone = detect.crop_zone(frame)
-        gate = detect.is_scoreboard(zone, self._settings.gate_fraction)
-        gray = detect.crop_zone(cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY))
-        sig = detect.zone_signature(gray)
-
-        if not gate:
-            self._reset_tracking()
+        if not detect.is_scoreboard(
+            zone, self._settings.gate_fraction, self._settings.complete_min_band
+        ):
             self._state = "idle"
             return None
-
-        if self._state == "idle":
-            self._state = "tracking"
-            self._last_sig = sig
-            self._stable_count = 0
+        if self._state == "wait_absent":
             return None
-
-        if self._last_sig is not None and detect.signature_diff(self._last_sig, sig) < (
-            self._settings.stability_eps
-        ):
-            self._stable_count += 1
-        else:
-            self._stable_count = 0
-        self._last_sig = sig
-
-        if self._stable_count >= self._settings.stability_frames:
-            return self._commit(frame, now)
-        return None
-
-    def _reset_tracking(self) -> None:
-        self._last_sig = None
-        self._stable_count = 0
+        return self._commit(frame, now)
 
     def _commit(self, frame: np.ndarray, now: float) -> Optional[Path]:
         path: Optional[Path] = None
@@ -338,8 +317,7 @@ def settings_from_config(cfg: Optional[config.GameConfig] = None) -> DaemonSetti
         monitor=d.monitor,
         poll_interval_s=d.poll_interval_s,
         gate_fraction=d.gate_fraction,
-        stability_eps=d.stability_eps,
-        stability_frames=d.stability_frames,
+        complete_min_band=d.complete_min_band,
         cooldown_s=d.cooldown_s,
     )
 

@@ -1,9 +1,10 @@
 """Screenshots tab for the LakituAI GUI.
 
 Shows the screenshots captured by the background daemon: a large viewer in
-the center (aspect-ratio preserved) with an identifying caption below, and a
-scrollable thumbnail rail on the right. Clicking a thumbnail opens it in the
-viewer; the "x" button next to each thumbnail deletes that file.
+the center (aspect-ratio preserved) with an identifying caption below, a
+scrollable thumbnail rail on the right, and a reload button so new captures
+appear without restarting the app. The folder is also polled in the
+background and the view auto-refreshes whenever a capture lands.
 """
 
 import re
@@ -17,6 +18,7 @@ from lakituai import logic
 
 THUMB_HEIGHT = 84
 THUMB_COL_WIDTH = 210
+AUTO_REFRESH_MS = 3000
 IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".bmp", ".webp"}
 
 
@@ -79,17 +81,32 @@ class ScreenshotsTab(customtkinter.CTkFrame):
         self._pil: Image.Image | None = None
         self._last_viewer_size: tuple[int, int] | None = None
         self._rows: list[customtkinter.CTkFrame] = []
+        self._last_snapshot: list[tuple[str, int]] | None = None
         self._build()
         self.refresh()
+        self._last_snapshot = self._folder_snapshot()
+        self._poll()
 
     def _build(self):
         self.grid_columnconfigure(0, weight=1)
         self.grid_columnconfigure(1, minsize=THUMB_COL_WIDTH, weight=0)
-        self.grid_rowconfigure(0, weight=1)
+        self.grid_rowconfigure(1, weight=1)
+
+        # Top bar: title + reload button.
+        top = customtkinter.CTkFrame(self, fg_color="transparent")
+        top.grid(row=0, column=0, columnspan=2, sticky="ew", padx=10, pady=(10, 0))
+        top.grid_columnconfigure(0, weight=1)
+        customtkinter.CTkLabel(top, text="Screenshots", anchor="w").grid(
+            row=0, column=0, sticky="w"
+        )
+        self.reload_button = customtkinter.CTkButton(
+            top, text="⟳", width=36, command=self.refresh
+        )
+        self.reload_button.grid(row=0, column=1, padx=(6, 0))
 
         # Center: big image + caption.
         self.viewer = customtkinter.CTkFrame(self, corner_radius=8)
-        self.viewer.grid(row=0, column=0, sticky="nsew", padx=(10, 5), pady=(10, 8))
+        self.viewer.grid(row=1, column=0, sticky="nsew", padx=(10, 5), pady=(10, 8))
         self.viewer.grid_rowconfigure(0, weight=1)
         self.viewer.grid_columnconfigure(0, weight=1)
 
@@ -110,10 +127,22 @@ class ScreenshotsTab(customtkinter.CTkFrame):
         self.viewer.bind("<Configure>", self._on_viewer_resize)
 
         # Right: vertical thumbnail rail.
-        self.rail = customtkinter.CTkScrollableFrame(
-            self, label_text="Screenshots", width=THUMB_COL_WIDTH
-        )
-        self.rail.grid(row=0, column=1, sticky="nsew", padx=(5, 10), pady=(10, 8))
+        self.rail = customtkinter.CTkScrollableFrame(self, width=THUMB_COL_WIDTH)
+        self.rail.grid(row=1, column=1, sticky="nsew", padx=(5, 10), pady=(10, 8))
+
+    def _folder_snapshot(self) -> list[tuple[str, int]]:
+        """(name, mtime_ns) pairs used to detect new/deleted screenshots."""
+        return [(p.name, p.stat().st_mtime_ns) for p in list_screenshots()]
+
+    def _poll(self):
+        """Auto-refresh the rail whenever the screenshots folder changes."""
+        if not self.winfo_exists():
+            return
+        snapshot = self._folder_snapshot()
+        if snapshot != self._last_snapshot:
+            self._last_snapshot = snapshot
+            self.refresh()
+        self.after(AUTO_REFRESH_MS, self._poll)
 
     # ------------------------------------------------------------------
     # Rendering

@@ -115,17 +115,15 @@ class DaemonConfig:
         poll_interval_s: seconds between screen polls.
         gate_fraction: minimum fraction of the panel zone the scoreboard
             block must cover to count as a scoreboard.
-        stability_eps: max mean-abs-diff between consecutive zone signatures
-            below which the panel counts as settled.
-        stability_frames: how many consecutive stable samples confirm capture.
+        complete_min_band: every horizontal band of the zone must be at
+            least this saturated (0-1) for the panel to count as settled.
         cooldown_s: seconds to ignore the screen after a capture.
     """
 
     monitor: int = 1
     poll_interval_s: float = 0.5
     gate_fraction: float = detect.DEFAULT_GATE_FRACTION
-    stability_eps: float = detect.DEFAULT_STABILITY_EPS
-    stability_frames: int = detect.DEFAULT_STABILITY_FRAMES
+    complete_min_band: float = detect.DEFAULT_COMPLETE_MIN_BAND
     cooldown_s: float = 90.0
 
 
@@ -218,11 +216,8 @@ def load_config(
                         gate_fraction=float(
                             daemon_data.get("gate_fraction", daemon_cfg.gate_fraction)
                         ),
-                        stability_eps=float(
-                            daemon_data.get("stability_eps", daemon_cfg.stability_eps)
-                        ),
-                        stability_frames=int(
-                            daemon_data.get("stability_frames", daemon_cfg.stability_frames)
+                        complete_min_band=float(
+                            daemon_data.get("complete_min_band", daemon_cfg.complete_min_band)
                         ),
                         cooldown_s=float(
                             daemon_data.get("cooldown_s", daemon_cfg.cooldown_s)
@@ -277,8 +272,7 @@ def save_config(
         "monitor": config.daemon.monitor,
         "poll_interval_s": config.daemon.poll_interval_s,
         "gate_fraction": config.daemon.gate_fraction,
-        "stability_eps": config.daemon.stability_eps,
-        "stability_frames": config.daemon.stability_frames,
+        "complete_min_band": config.daemon.complete_min_band,
         "cooldown_s": config.daemon.cooldown_s,
     }
 

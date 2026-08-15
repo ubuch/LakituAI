@@ -595,15 +595,18 @@ def daemon_stop_cmd() -> None:
 def feed_cmd(image_paths: list[str]) -> None:
     """Run the scoreboard detector over static images (no OCR, no DB).
 
-    For each image reports the panel-zone size and the largest connected
-    saturated fraction vs the configured gate, so the detector can be
-    validated/calibrated against real screenshots without touching the screen.
+    For each image reports the panel-zone size, the largest connected
+    saturated fraction vs the configured gate, and the per-band coverage
+    minimum (complete-panel check), so the detector can be validated and
+    calibrated against real screenshots without touching the screen.
     """
     import cv2
 
     from lakituai import detect
 
-    gate = config.load_config().daemon.gate_fraction
+    daemon_cfg = config.load_config().daemon
+    gate = daemon_cfg.gate_fraction
+    min_band = daemon_cfg.complete_min_band
 
     print("SCOREBOARD DETECTOR FEED")
     print("-" * 80)
@@ -616,12 +619,18 @@ def feed_cmd(image_paths: list[str]) -> None:
 
         zone = detect.crop_zone(frame)
         fraction = detect.largest_cc_fraction(zone)
-        verdict = "SCOREBOARD" if fraction >= gate else "not scoreboard"
+        bands_min = float(detect.band_coverage(zone).min())
+        verdict = (
+            "SCOREBOARD"
+            if detect.is_scoreboard(zone, gate, min_band)
+            else "not scoreboard"
+        )
         y1, y2, x1, x2 = detect.zone_rect(frame.shape)
         print(
             f"{path.name:45s} {frame.shape[1]:5d}x{frame.shape[0]:<4d} "
             f"zone=({x1},{y1})-({x2},{y2}) frac={fraction:5.2f} "
-            f"gate={gate:.2f} -> {verdict}"
+            f"min_band={bands_min:5.2f} gate={gate:.2f} min_band_req={min_band:.2f} "
+            f"-> {verdict}"
         )
     print("-" * 80)
 
