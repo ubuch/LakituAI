@@ -7,8 +7,9 @@ Behavior depends on the arguments:
   run OCR on a saved screenshot.
 
 Because the build is windowed (``console=False``), ``sys.stdout``/``stderr``
-are ``None``; the CLI prints a lot, so redirect them to a per-user log file
-to avoid crashes and keep a record of background OCR runs.
+point at invalid handles (not None): libraries such as tqdm crash when they
+write to them. Redirect them to a per-user log file to avoid crashes and keep
+a record of background OCR runs.
 """
 
 import os
@@ -19,15 +20,17 @@ from lakituai.lakitu_ai import gui_cmd, main
 
 
 def _redirect_standard_streams() -> None:
-    if sys.stdout is not None and sys.stderr is not None:
+    if not getattr(sys, "frozen", False):
         return
+    # In windowed builds ``sys.stdout``/``sys.stderr`` point at invalid console
+    # handles (they are *not* None): progress libraries such as tqdm call
+    # ``flush()``/``write()`` on them and crash with OSError [Errno 22].
+    # Always redirect to a per-user log file so those writes succeed.
     log_dir = runtime_paths.user_data_dir() / "resources"
     log_dir.mkdir(parents=True, exist_ok=True)
     stream = open(log_dir / "cli.log", "a", encoding="utf-8", buffering=1)
-    if sys.stdout is None:
-        sys.stdout = stream
-    if sys.stderr is None:
-        sys.stderr = stream
+    sys.stdout = stream
+    sys.stderr = stream
 
 
 if __name__ == "__main__":

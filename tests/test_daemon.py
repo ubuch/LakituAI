@@ -15,11 +15,19 @@ def blank_frame(height=1080, width=1920, color=(20, 20, 20)):
 
 
 def zone_filled_frame(fill, color=(40, 60, 200), height=1080, width=1920):
-    """Full-width saturated block filling ``fill`` of the zone from the top."""
+    """Full-width textured saturated block filling ``fill`` of the zone.
+
+    The texture mimics the scoreboard's row content so a fully-settled panel
+    (``fill=1.0``) passes both the gate and the complete-panel (edge) check;
+    partial fills fail the complete check because the bottom rows are empty.
+    """
 
     frame = blank_frame(height, width)
     y1, y2, x1, x2 = detect.zone_rect(frame.shape)
     frame[y1 : y1 + int((y2 - y1) * fill), x1:x2] = color
+    zone = frame[y1 : y1 + int((y2 - y1) * fill), x1:x2]
+    rng = np.random.default_rng(0)
+    zone[rng.random(zone.shape[:2]) < 0.15] = 240
     return frame
 
 
@@ -256,6 +264,22 @@ class ScreenshotTests(unittest.TestCase):
         self.assertTrue(path.exists())
         self.assertEqual(path.suffix, ".jpg")
         self.assertGreater(path.stat().st_size, 0)
+
+    def test_screenshot_names_increment(self):
+        dmn = daemon.ScoreboardDaemon(daemon.DaemonSettings(screenshots_dir=self.shots))
+        p1 = dmn._save_screenshot(zone_filled_frame(1.0))
+        p2 = dmn._save_screenshot(zone_filled_frame(1.0))
+        p3 = dmn._save_screenshot(zone_filled_frame(1.0))
+        self.assertEqual(p1.name, "auto_1.jpg")
+        self.assertEqual(p2.name, "auto_2.jpg")
+        self.assertEqual(p3.name, "auto_3.jpg")
+
+    def test_next_index_skips_existing_numbers(self):
+        (self.shots).mkdir(parents=True)
+        (self.shots / "auto_2.jpg").write_bytes(b"x")
+        (self.shots / "auto_5.jpg").write_bytes(b"x")
+        (self.shots / "auto_10.jpg").write_bytes(b"x")
+        self.assertEqual(daemon._next_screenshot_index(self.shots), 11)
 
 
 if __name__ == "__main__":

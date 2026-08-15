@@ -117,6 +117,8 @@ class DaemonConfig:
             block must cover to count as a scoreboard.
         complete_min_band: every horizontal band of the zone must be at
             least this saturated (0-1) for the panel to count as settled.
+        complete_min_edge: every horizontal band must have at least this
+            edge density (0-100) so rows with content are confirmed.
         cooldown_s: seconds to ignore the screen after a capture.
     """
 
@@ -124,6 +126,7 @@ class DaemonConfig:
     poll_interval_s: float = 0.5
     gate_fraction: float = detect.DEFAULT_GATE_FRACTION
     complete_min_band: float = detect.DEFAULT_COMPLETE_MIN_BAND
+    complete_min_edge: float = detect.DEFAULT_COMPLETE_MIN_EDGE
     cooldown_s: float = 90.0
 
 
@@ -219,6 +222,9 @@ def load_config(
                         complete_min_band=float(
                             daemon_data.get("complete_min_band", daemon_cfg.complete_min_band)
                         ),
+                        complete_min_edge=float(
+                            daemon_data.get("complete_min_edge", daemon_cfg.complete_min_edge)
+                        ),
                         cooldown_s=float(
                             daemon_data.get("cooldown_s", daemon_cfg.cooldown_s)
                         ),
@@ -273,6 +279,7 @@ def save_config(
         "poll_interval_s": config.daemon.poll_interval_s,
         "gate_fraction": config.daemon.gate_fraction,
         "complete_min_band": config.daemon.complete_min_band,
+        "complete_min_edge": config.daemon.complete_min_edge,
         "cooldown_s": config.daemon.cooldown_s,
     }
 

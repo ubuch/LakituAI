@@ -10,20 +10,23 @@ it keeps working on live video where the panel shows subtle animation):
    on-screen region (the gate).  Plain gameplay, even on colorful tracks, only
    produces scattered saturated patches (largest covers far less area).
 
-2. **Is it complete (settled)?**  The panel "falls in" top-to-bottom and the
-   last rows fill in last, so a partially-appeared panel has empty bands at
-   the bottom.  We therefore require *every* horizontal band of the zone to be
-   substantially saturated.  A settled panel passes this immediately; a panel
-   mid-animation (or the "a medias" state) fails until it is fully down.
+2. **Is it complete (settled)?**  Two sub-checks, both resolution-independent
+   per horizontal band of the zone:
+   - ``band_coverage``: every band must be substantially *saturated*.  This
+     rejects a panel still "falling in" whose rows have not arrived (the
+     "a medias" state has empty bottom bands).
+   - ``edge_band_coverage``: every band must have real *content* (edges from
+     the player rows / numbers / portraits).  This rejects the mid-appearance
+     state where the panel's colored backdrop already covers the whole zone
+     but the rows have not been drawn yet (captured once on the Windows
+     test video: all bands were saturated, but six rows of content were
+     missing).
 
-Both checks are resolution-independent: every coordinate is expressed as a
-fraction of the frame size, matching the proportional crop already used by
-``lakituai.logic.upscale_img``.
-
-Calibration (against real samples in ``tmp/``): a settled scoreboard covers
-~96-100% of the zone with every band >= ~85% saturated, gameplay peaks at
-~39%, and the "a medias" (bottom rows still missing) sample drops to a
-minimum band coverage of ~32%.
+Calibration (against real samples in ``tmp/``): a settled scoreboard has
+min-band saturation ~85-91% and min-band edge density ~2.2-3.4 (of 100);
+gameplay peaks at ~39% area; the "a medias" sample drops to ~32% saturation
+and 0 edge density; the premature backdrop capture has full saturation but 0
+edge density.
 """
 
 from __future__ import annotations
@@ -39,11 +42,14 @@ ZONE_Y1, ZONE_Y2 = 43 / 1080, 956 / 1080
 # Defaults; the daemon overrides these from config.
 DEFAULT_GATE_FRACTION = 0.60  # largest saturated blob must cover >= 60% of zone
 DEFAULT_COMPLETE_MIN_BAND = 0.50  # every band must be >= this saturated (0-1)
+DEFAULT_COMPLETE_MIN_EDGE = 1.5  # every band must have >= this edge density (0-100)
 BAND_COUNT = 12  # panel rows (Mario Kart World: 12 slots)
 _SATURATION = 0.45
 _VALUE = 110
 _CLOSE_ITER = 3
 _CLOSE_KERNEL = (5, 5)
+_EDGE_LOW = 60
+_EDGE_HIGH = 160
 
 
 def zone_rect(frame_shape) -> tuple[int, int, int, int]:
@@ -139,33 +145,59 @@ def band_coverage(zone_bgr: np.ndarray, bands: int = BAND_COUNT) -> np.ndarray:
     return coverage
 
 
+def edge_band_coverage(zone_bgr: np.ndarray, bands: int = BAND_COUNT) -> np.ndarray:
+    """Per-band density (0-100) of edge pixels, top to bottom.
+
+    Edges come from the scoreboard's content (numbers, names, portraits), so
+    a band with content has a high value and a smooth colored backdrop has
+    ~0.  This catches the mid-appearance state where the panel's colored bars
+    already cover the whole zone but the rows have not been drawn yet.
+    """
+
+    gray = cv2.cvtColor(zone_bgr, cv2.COLOR_BGR2GRAY)
+    edges = cv2.Canny(gray, _EDGE_LOW, _EDGE_HIGH).astype(bool)
+    height = edges.shape[0]
+    density = np.empty(bands, dtype=float)
+    for i in range(bands):
+        band = edges[int(i * height / bands) : int((i + 1) * height / bands)]
+        density[i] = float(band.mean()) * 100.0
+    return density
+
+
 def is_complete_panel(
-    zone_bgr: np.ndarray, min_band: float = DEFAULT_COMPLETE_MIN_BAND
+    zone_bgr: np.ndarray,
+    min_band: float = DEFAULT_COMPLETE_MIN_BAND,
+    min_edge: float = DEFAULT_COMPLETE_MIN_EDGE,
 ) -> bool:
-    """True when every band of the zone is substantially saturated.
+    """True when every band of the zone is saturated *and* has content.
 
     This is the "settled" check: it accepts a panel as soon as all its rows
     are visibly present (so it fires on the very first frame of a settled
-    scoreboard, even on live video) and rejects partial states where the
-    bottom rows have not landed yet.
+    scoreboard, even on live video) and rejects both partial states we have
+    seen in the wild: rows that have not landed yet (empty bottom bands) and
+    rows whose content has not been drawn yet (saturated backdrop, no edges).
     """
 
-    return float(band_coverage(zone_bgr).min()) >= min_band
+    return (
+        float(band_coverage(zone_bgr).min()) >= min_band
+        and float(edge_band_coverage(zone_bgr).min()) >= min_edge
+    )
 
 
 def is_scoreboard(
     zone_bgr: np.ndarray,
     gate_fraction: float = DEFAULT_GATE_FRACTION,
     complete_min_band: float = DEFAULT_COMPLETE_MIN_BAND,
+    complete_min_edge: float = DEFAULT_COMPLETE_MIN_EDGE,
 ) -> bool:
     """Cheap single-frame test for "a complete scoreboard is on screen".
 
     True when a contiguous saturated blob covers at least ``gate_fraction`` of
     the zone (a scoreboard is present, not gameplay) **and** every horizontal
-    band is at least ``complete_min_band`` saturated (the panel has fully
-    appeared, not a partial "a medias" state).
+    band is at least ``complete_min_band`` saturated and has at least
+    ``complete_min_edge`` edge density (the panel has fully appeared).
     """
 
     return largest_cc_fraction(zone_bgr) >= gate_fraction and is_complete_panel(
-        zone_bgr, min_band=complete_min_band
+        zone_bgr, min_band=complete_min_band, min_edge=complete_min_edge
     )

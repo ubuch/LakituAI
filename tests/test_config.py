@@ -26,6 +26,7 @@ class DaemonConfigTests(unittest.TestCase):
         self.assertEqual(cfg.daemon.poll_interval_s, 0.5)
         self.assertEqual(cfg.daemon.gate_fraction, detect.DEFAULT_GATE_FRACTION)
         self.assertEqual(cfg.daemon.complete_min_band, detect.DEFAULT_COMPLETE_MIN_BAND)
+        self.assertEqual(cfg.daemon.complete_min_edge, detect.DEFAULT_COMPLETE_MIN_EDGE)
         self.assertEqual(cfg.daemon.cooldown_s, 90.0)
 
     def test_backward_compat_only_races_per_war(self):
@@ -42,6 +43,7 @@ class DaemonConfigTests(unittest.TestCase):
                     "poll_interval_s": 1.0,
                     "gate_fraction": 0.7,
                     "complete_min_band": 0.6,
+                    "complete_min_edge": 5.0,
                     "cooldown_s": 120.0,
                 },
             }
@@ -50,6 +52,7 @@ class DaemonConfigTests(unittest.TestCase):
         self.assertEqual(cfg.daemon.poll_interval_s, 1.0)
         self.assertEqual(cfg.daemon.gate_fraction, 0.7)
         self.assertEqual(cfg.daemon.complete_min_band, 0.6)
+        self.assertEqual(cfg.daemon.complete_min_edge, 5.0)
         self.assertEqual(cfg.daemon.cooldown_s, 120.0)
 
     def test_partial_daemon_section_falls_back_per_key(self):

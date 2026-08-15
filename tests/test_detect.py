@@ -15,15 +15,24 @@ def blank_frame(height=1080, width=1920, color=(20, 20, 20)):
     return np.full((height, width, 3), color, dtype=np.uint8)
 
 
-def frame_with_panel(bgr=(40, 60, 200), height=1080, width=1920):
-    """Frame whose panel zone is filled with one solid saturated color.
+def _texture(shape, seed=0, density=0.15):
+    """Boolean mask of white "text" speckles used to give a panel row edges."""
+    rng = np.random.default_rng(seed)
+    return rng.random(shape) < density
 
-    Models a fully-appeared scoreboard (a contiguous saturated block).
+
+def frame_with_panel(bgr=(40, 60, 200), height=1080, width=1920):
+    """Frame whose panel zone is a textured saturated block.
+
+    Models a fully-appeared scoreboard: a contiguous saturated block with
+    text-like content in every row (so the edge check passes too).
     """
 
     frame = blank_frame(height, width)
     y1, y2, x1, x2 = detect.zone_rect(frame.shape)
     frame[y1:y2, x1:x2] = bgr
+    zone = frame[y1:y2, x1:x2]
+    zone[_texture(zone.shape[:2])] = 240
     return frame
 
 
@@ -31,14 +40,30 @@ def frame_with_falling_panel(bgr=(40, 60, 200), height=1080, width=1920, fill=0.
     """Frame whose panel zone is mostly filled from the top (mid-animation).
 
     The block already covers most of the zone (as in the real a_medias3
-    sample, which reached ~91%), so the gate fires; it is the *complete-panel*
-    (per-band) check that must defer capture until the bottom rows land.
+    sample, which reached ~91%), so the gate fires; the bottom rows have not
+    landed, so the complete-panel check must defer capture.
     """
 
     frame = blank_frame(height, width)
     y1, y2, x1, x2 = detect.zone_rect(frame.shape)
     bottom = y1 + int((y2 - y1) * fill)
     frame[y1:bottom, x1:x2] = bgr
+    zone = frame[y1:bottom, x1:x2]
+    zone[_texture(zone.shape[:2])] = 240
+    return frame
+
+
+def frame_with_backdrop_only(bgr=(40, 60, 200), height=1080, width=1920):
+    """Smooth saturated block with NO content (mid-appearance).
+
+    Models the premature capture seen on the Windows test video: the panel's
+    colored backdrop already covers the whole zone (saturation passes) but the
+    rows have not been drawn yet (no edges).
+    """
+
+    frame = blank_frame(height, width)
+    y1, y2, x1, x2 = detect.zone_rect(frame.shape)
+    frame[y1:y2, x1:x2] = bgr
     return frame
 
 
@@ -99,15 +124,28 @@ class GateTests(unittest.TestCase):
         self.assertGreaterEqual(detect.largest_cc_fraction(zone), detect.DEFAULT_GATE_FRACTION)
         self.assertFalse(detect.is_scoreboard(zone))
 
+    def test_backdrop_only_panel_is_not_complete(self):
+        # The premature state from the Windows test video: the colored bars
+        # already cover the whole zone (gate + saturation pass) but there is
+        # no content -- the edge check must reject it.
+        zone = detect.crop_zone(frame_with_backdrop_only())
+        self.assertGreaterEqual(detect.largest_cc_fraction(zone), detect.DEFAULT_GATE_FRACTION)
+        self.assertGreaterEqual(detect.band_coverage(zone).min(), detect.DEFAULT_COMPLETE_MIN_BAND)
+        self.assertLess(detect.edge_band_coverage(zone).min(), detect.DEFAULT_COMPLETE_MIN_EDGE)
+        self.assertFalse(detect.is_scoreboard(zone))
+
 
 class BandCoverageTests(unittest.TestCase):
-    def test_complete_panel_has_every_band_saturated(self):
+    def test_complete_panel_has_every_band_saturated_and_textured(self):
         for color in [(40, 60, 200), (30, 200, 30), (200, 200, 20)]:
             with self.subTest(color=color):
                 zone = detect.crop_zone(frame_with_panel(color))
                 coverage = detect.band_coverage(zone)
+                edges = detect.edge_band_coverage(zone)
                 self.assertEqual(len(coverage), detect.BAND_COUNT)
+                self.assertEqual(len(edges), detect.BAND_COUNT)
                 self.assertGreaterEqual(coverage.min(), detect.DEFAULT_COMPLETE_MIN_BAND)
+                self.assertGreaterEqual(edges.min(), detect.DEFAULT_COMPLETE_MIN_EDGE)
                 self.assertTrue(detect.is_complete_panel(zone))
 
     def test_falling_panel_has_empty_bottom_bands(self):
@@ -137,14 +175,17 @@ class RealSamplesTests(unittest.TestCase):
             self.assertLess(detect.largest_cc_fraction(zone), detect.DEFAULT_GATE_FRACTION, msg=name)
             self.assertFalse(detect.is_scoreboard(zone), msg=name)
 
-    def test_incomplete_scoreboard_sample_is_not_scoreboard(self):
+    def test_incomplete_scoreboard_samples_are_not_scoreboards(self):
         # The "a medias" panel is ~91% present (gate passes) but its bottom
-        # rows are still missing -- the complete-panel check must reject it.
-        img = self._load("scoreboard_a_medias3.png")
-        zone = detect.crop_zone(img)
-        self.assertGreaterEqual(detect.largest_cc_fraction(zone), detect.DEFAULT_GATE_FRACTION)
-        self.assertLess(detect.band_coverage(zone).min(), detect.DEFAULT_COMPLETE_MIN_BAND)
-        self.assertFalse(detect.is_scoreboard(zone))
+        # rows are missing; the premature capture from the Windows video has
+        # full saturation but no content (no edges). Both must be rejected.
+        for name in ("scoreboard_a_medias3.png", "foto_daemon1.jpg"):
+            img = self._load(name)
+            zone = detect.crop_zone(img)
+            self.assertGreaterEqual(
+                detect.largest_cc_fraction(zone), detect.DEFAULT_GATE_FRACTION, msg=name
+            )
+            self.assertFalse(detect.is_scoreboard(zone), msg=name)
 
     def test_complete_scoreboard_samples_are_scoreboards(self):
         for name in (
@@ -156,6 +197,9 @@ class RealSamplesTests(unittest.TestCase):
             zone = detect.crop_zone(img)
             self.assertGreaterEqual(
                 detect.band_coverage(zone).min(), detect.DEFAULT_COMPLETE_MIN_BAND, msg=name
+            )
+            self.assertGreaterEqual(
+                detect.edge_band_coverage(zone).min(), detect.DEFAULT_COMPLETE_MIN_EDGE, msg=name
             )
             self.assertTrue(detect.is_scoreboard(zone), msg=name)
 

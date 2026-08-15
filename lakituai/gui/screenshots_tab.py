@@ -38,13 +38,16 @@ def list_screenshots(screenshots_dir=None) -> list[Path]:
 
 
 def parse_caption(path) -> str:
-    """Human-readable timestamp for a daemon screenshot name.
+    """Human-readable label for a daemon screenshot name.
 
-    Daemon screenshots are named ``auto_YYYYMMDD_HHMMSSffffff.jpg``; falls
-    back to the file modification time for any other name.
+    Daemon screenshots are named ``auto_N.jpg`` (or the legacy
+    ``auto_YYYYMMDD_HHMMSSffffff.jpg``). The numbered form has no timestamp in
+    the name, so the file modification time is used. Falls back to the file
+    modification time for any other name.
     """
 
-    m = re.match(r"auto_(\d{8})_(\d{6})", Path(path).stem)
+    stem = Path(path).stem
+    m = re.match(r"auto_(\d{8})_(\d{6})", stem)
     if m:
         try:
             stamp = datetime.strptime(m.group(1) + m.group(2), "%Y%m%d%H%M%S")
@@ -52,11 +55,16 @@ def parse_caption(path) -> str:
         except ValueError:
             pass
     try:
-        return datetime.fromtimestamp(Path(path).stat().st_mtime).strftime(
+        mtime = datetime.fromtimestamp(Path(path).stat().st_mtime).strftime(
             "%Y-%m-%d %H:%M:%S"
         )
     except OSError:
-        return ""
+        mtime = ""
+    m = re.match(r"auto_(\d+)", stem)
+    if m:
+        label = f"Screenshot {m.group(1)}"
+        return f"{label} - {mtime}" if mtime else label
+    return mtime
 
 
 def fit_size(img_w: int, img_h: int, box_w: int, box_h: int) -> tuple[int, int]:

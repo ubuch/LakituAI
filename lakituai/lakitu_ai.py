@@ -607,6 +607,7 @@ def feed_cmd(image_paths: list[str]) -> None:
     daemon_cfg = config.load_config().daemon
     gate = daemon_cfg.gate_fraction
     min_band = daemon_cfg.complete_min_band
+    min_edge = daemon_cfg.complete_min_edge
 
     print("SCOREBOARD DETECTOR FEED")
     print("-" * 80)
@@ -620,17 +621,18 @@ def feed_cmd(image_paths: list[str]) -> None:
         zone = detect.crop_zone(frame)
         fraction = detect.largest_cc_fraction(zone)
         bands_min = float(detect.band_coverage(zone).min())
+        edges_min = float(detect.edge_band_coverage(zone).min())
         verdict = (
             "SCOREBOARD"
-            if detect.is_scoreboard(zone, gate, min_band)
+            if detect.is_scoreboard(zone, gate, min_band, min_edge)
             else "not scoreboard"
         )
         y1, y2, x1, x2 = detect.zone_rect(frame.shape)
         print(
             f"{path.name:45s} {frame.shape[1]:5d}x{frame.shape[0]:<4d} "
             f"zone=({x1},{y1})-({x2},{y2}) frac={fraction:5.2f} "
-            f"min_band={bands_min:5.2f} gate={gate:.2f} min_band_req={min_band:.2f} "
-            f"-> {verdict}"
+            f"min_band={bands_min:5.2f} min_edge={edges_min:5.2f} "
+            f"(req {gate:.2f}/{min_band:.2f}/{min_edge:.2f}) -> {verdict}"
         )
     print("-" * 80)
 

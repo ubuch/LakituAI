@@ -29,7 +29,6 @@ import sys
 import threading
 import time
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable, Optional
 
@@ -51,6 +50,7 @@ class DaemonSettings:
     poll_interval_s: float = 0.5
     gate_fraction: float = detect.DEFAULT_GATE_FRACTION
     complete_min_band: float = detect.DEFAULT_COMPLETE_MIN_BAND
+    complete_min_edge: float = detect.DEFAULT_COMPLETE_MIN_EDGE
     cooldown_s: float = 90.0
     screenshots_dir: Optional[Path] = None
     log_path: Optional[Path] = DEFAULT_LOG_PATH
@@ -240,7 +240,10 @@ class ScoreboardDaemon:
     def _observe(self, frame: np.ndarray, now: float) -> Optional[Path]:
         zone = detect.crop_zone(frame)
         if not detect.is_scoreboard(
-            zone, self._settings.gate_fraction, self._settings.complete_min_band
+            zone,
+            self._settings.gate_fraction,
+            self._settings.complete_min_band,
+            self._settings.complete_min_edge,
         ):
             self._state = "idle"
             return None
@@ -270,8 +273,7 @@ class ScoreboardDaemon:
     def _save_screenshot(self, frame: np.ndarray) -> Path:
         d = self._settings.screenshots_dir or logic.SCREENSHOTS_DIR
         d.mkdir(parents=True, exist_ok=True)
-        name = f"auto_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S%f')}.jpg"
-        path = d / name
+        path = d / f"auto_{_next_screenshot_index(d)}.jpg"
         cv2.imwrite(str(path), frame)
         return path
 
@@ -287,6 +289,17 @@ class ScoreboardDaemon:
                 self._logger.exception("poll iteration failed")
             time.sleep(self._settings.poll_interval_s)
         self._logger.info("daemon stopped")
+
+
+def _next_screenshot_index(directory: Path) -> int:
+    """Next sequential ``auto_N`` screenshot number in ``directory``."""
+
+    highest = 0
+    for path in Path(directory).glob("auto_*.jpg"):
+        stem = path.stem
+        if stem.startswith("auto_") and stem[5:].isdigit():
+            highest = max(highest, int(stem[5:]))
+    return highest + 1
 
 
 def _build_logger(log_path: Optional[Path], name: str = "lakituai.daemon") -> logging.Logger:
@@ -318,6 +331,7 @@ def settings_from_config(cfg: Optional[config.GameConfig] = None) -> DaemonSetti
         poll_interval_s=d.poll_interval_s,
         gate_fraction=d.gate_fraction,
         complete_min_band=d.complete_min_band,
+        complete_min_edge=d.complete_min_edge,
         cooldown_s=d.cooldown_s,
     )
 

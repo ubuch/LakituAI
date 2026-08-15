@@ -38,6 +38,12 @@ class ScreenshotsHelpersTests(unittest.TestCase):
         p = Path("auto_20260814_161500123456.jpg")
         self.assertEqual(screenshots_tab.parse_caption(p), "2026-08-14 16:15:00")
 
+    def test_parse_caption_numbered_includes_mtime(self):
+        f = self.dir / "auto_7.jpg"
+        f.write_bytes(b"x")
+        caption = screenshots_tab.parse_caption(f)
+        self.assertTrue(caption.startswith("Screenshot 7 - "))
+
     def test_parse_caption_falls_back_to_mtime(self):
         f = self.dir / "whatever.png"
         f.write_bytes(b"x")
