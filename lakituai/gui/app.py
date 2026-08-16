@@ -14,6 +14,7 @@ they render reliably on Linux).
 """
 
 import json
+import sys
 
 import customtkinter
 from PIL import Image
@@ -55,15 +56,16 @@ def _save_window_pos(x, y):
         pass
 
 
-def _clamp_window_pos(x, y, screen_w, screen_h):
-    """Keep the saved position reachable on the current screen.
+def _clamp_window_pos(x, y, left, top, right, bottom):
+    """Keep the saved position reachable on the current desktop.
 
     Guards against the saved position referring to a monitor that is no
     longer connected (or a smaller screen), while leaving the title bar
-    visible so the window can always be moved again.
+    visible so the window can always be moved again. Bounds may be negative
+    when a monitor sits to the left of or above the primary screen.
     """
-    x = max(0, min(x, max(0, screen_w - 120)))
-    y = max(0, min(y, max(0, screen_h - 60)))
+    x = max(left, min(x, max(left, right - 120)))
+    y = max(top, min(y, max(top, bottom - 60)))
     return x, y
 
 
@@ -328,14 +330,82 @@ class App(customtkinter.CTk):
             return
 
         self.update_idletasks()
-        x, y = _clamp_window_pos(*pos, self.winfo_screenwidth(), self.winfo_screenheight())
+        left, top, right, bottom = self._virtual_desktop_bounds()
+        x, y = _clamp_window_pos(*pos, left, top, right, bottom)
         self.geometry(f"+{x}+{y}")
 
+    def _virtual_desktop_bounds(self):
+        """Return (left, top, right, bottom) covering all monitors.
+
+        ``winfo_screenwidth/height`` only describe the total size, which is
+        useless when a monitor sits at negative coordinates. Windows exposes
+        the full virtual desktop bounds via the Win32 API.
+        """
+        if sys.platform == "win32":
+            try:
+                import ctypes
+
+                get = ctypes.windll.user32.GetSystemMetrics
+                # SM_XVIRTUALSCREEN, SM_YVIRTUALSCREEN,
+                # SM_CXVIRTUALSCREEN, SM_CYVIRTUALSCREEN
+                x, y = get(76), get(77)
+                return x, y, x + get(78), y + get(79)
+            except Exception:
+                pass
+        return 0, 0, self.winfo_screenwidth(), self.winfo_screenheight()
+
+    def _monitor_bounds(self):
+        """Return (left, top, right, bottom) of the monitor under the cursor.
+
+        The cursor marks the monitor that has focus. On Windows we query the
+        real per-monitor geometry with the Win32 API; elsewhere we fall back
+        to the whole virtual desktop (the cursor then picks which half of the
+        screen the window lands on).
+        """
+        if sys.platform == "win32":
+            try:
+                import ctypes
+                from ctypes import wintypes
+
+                class _RECT(ctypes.Structure):
+                    _fields_ = [
+                        ("left", ctypes.c_long),
+                        ("top", ctypes.c_long),
+                        ("right", ctypes.c_long),
+                        ("bottom", ctypes.c_long),
+                    ]
+
+                class _MONITORINFO(ctypes.Structure):
+                    _fields_ = [
+                        ("cbSize", ctypes.c_ulong),
+                        ("rcMonitor", _RECT),
+                        ("rcWork", _RECT),
+                        ("dwFlags", ctypes.c_ulong),
+                    ]
+
+                point = wintypes.POINT()
+                ctypes.windll.user32.GetCursorPos(ctypes.byref(point))
+                monitor = ctypes.windll.user32.MonitorFromPoint(point, 2)  # nearest
+                info = _MONITORINFO()
+                info.cbSize = ctypes.sizeof(_MONITORINFO)
+                if monitor and ctypes.windll.user32.GetMonitorInfoW(
+                    monitor, ctypes.byref(info)
+                ):
+                    rect = info.rcMonitor
+                    return rect.left, rect.top, rect.right, rect.bottom
+            except Exception:
+                pass
+        return self._virtual_desktop_bounds()
+
     def _center_window(self):
-        """Center the window on the current screen."""
+        """Center the window on the monitor that currently has the cursor."""
         self.update_idletasks()
-        x = max(0, (self.winfo_screenwidth() - self.winfo_width()) // 2)
-        y = max(0, (self.winfo_screenheight() - self.winfo_height()) // 2)
+        left, top, right, bottom = self._monitor_bounds()
+        w, h = self.winfo_width(), self.winfo_height()
+        cx = (left + right) // 2
+        cy = (top + bottom) // 2
+        x = max(left, min(cx - w // 2, right - w))
+        y = max(top, min(cy - h // 2, bottom - h))
         self.geometry(f"+{x}+{y}")
 
     def _select_tab(self, index):

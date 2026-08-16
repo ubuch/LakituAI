@@ -45,26 +45,41 @@ class WindowStateTests(unittest.TestCase):
 
 
 class ClampTests(unittest.TestCase):
-    """Saved positions are kept reachable on the current screen."""
+    """Saved positions are kept reachable on the current desktop."""
 
-    def test_position_within_screen_unchanged(self):
-        self.assertEqual(app_mod._clamp_window_pos(100, 200, 1920, 1080), (100, 200))
+    def test_position_within_desktop_unchanged(self):
+        self.assertEqual(
+            app_mod._clamp_window_pos(100, 200, 0, 0, 1920, 1080), (100, 200)
+        )
 
     def test_off_right_edge_clamped(self):
-        x, y = app_mod._clamp_window_pos(3000, 400, 1920, 1080)
+        x, y = app_mod._clamp_window_pos(3000, 400, 0, 0, 1920, 1080)
         self.assertEqual(x, 1920 - 120)
         self.assertEqual(y, 400)
 
     def test_off_bottom_edge_clamped(self):
-        x, y = app_mod._clamp_window_pos(300, 5000, 1920, 1080)
+        x, y = app_mod._clamp_window_pos(300, 5000, 0, 0, 1920, 1080)
         self.assertEqual(x, 300)
         self.assertEqual(y, 1080 - 60)
 
-    def test_negative_position_clamped_to_zero(self):
-        self.assertEqual(app_mod._clamp_window_pos(-50, -80, 1920, 1080), (0, 0))
+    def test_negative_position_clamped_to_left_edge(self):
+        self.assertEqual(app_mod._clamp_window_pos(-50, -80, 0, 0, 1920, 1080), (0, 0))
 
-    def test_screen_smaller_than_min_keeps_zero(self):
-        self.assertEqual(app_mod._clamp_window_pos(10, 10, 100, 50), (0, 0))
+    def test_desktop_smaller_than_min_keeps_left_edge(self):
+        self.assertEqual(
+            app_mod._clamp_window_pos(10, 10, 0, 0, 100, 50), (0, 0)
+        )
+
+    def test_left_monitor_negative_bounds_kept(self):
+        # A monitor to the left of the primary has negative x coordinates.
+        x, y = app_mod._clamp_window_pos(-1500, 300, -1920, 0, 0, 1080)
+        self.assertEqual(x, -1500)
+        self.assertEqual(y, 300)
+
+    def test_off_left_of_negative_desktop_clamped_to_left_edge(self):
+        x, y = app_mod._clamp_window_pos(-3000, 300, -1920, 0, 0, 1080)
+        self.assertEqual(x, -1920)
+        self.assertEqual(y, 300)
 
 
 class WindowStatePathTests(unittest.TestCase):
