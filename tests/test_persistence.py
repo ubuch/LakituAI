@@ -1,5 +1,6 @@
 """Tests for the SQLite persistence layer."""
 
+import sqlite3
 import tempfile
 import unittest
 from pathlib import Path
@@ -24,6 +25,39 @@ class PersistenceTests(unittest.TestCase):
         """Database initialization should create all required tables."""
         # Database was initialized in setUp, so check if file exists
         self.assertTrue(self.db_path.exists())
+
+    def test_init_db_stamps_schema_version(self):
+        """init_db should stamp the current schema version in the database."""
+        self.assertEqual(persistence.get_schema_version(self.db_path), persistence.SCHEMA_VERSION)
+
+    def test_fresh_db_has_no_schema_version(self):
+        """An untouched database file has no schema version yet."""
+        empty = Path(self.temp_dir.name) / "fresh.db"
+        empty.write_bytes(b"")  # empty SQLite file
+        self.assertEqual(persistence.get_schema_version(empty), 0)
+
+    def test_init_db_idempotent_keeps_version(self):
+        """Re-running init_db should not change the schema version."""
+        persistence.init_db(self.db_path)
+        persistence.init_db(self.db_path)
+        self.assertEqual(persistence.get_schema_version(self.db_path), persistence.SCHEMA_VERSION)
+
+    def test_apply_migrations_upgrades_old_db(self):
+        """A database stamped with an older version gets upgraded in place."""
+        conn = sqlite3.connect(str(self.db_path))
+        try:
+            conn.execute("PRAGMA user_version = 0")
+            conn.commit()
+        finally:
+            conn.close()
+        self.assertEqual(persistence.get_schema_version(self.db_path), 0)
+
+        conn = sqlite3.connect(str(self.db_path))
+        try:
+            persistence._apply_migrations(conn)
+        finally:
+            conn.close()
+        self.assertEqual(persistence.get_schema_version(self.db_path), persistence.SCHEMA_VERSION)
 
     def test_get_or_create_war(self):
         """Creating a war should return its ID, and retrieving it again should return the same ID."""

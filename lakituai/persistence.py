@@ -13,6 +13,39 @@ from lakituai import logic
 
 DB_PATH = logic.RESOURCES_DIR / "wars.db"
 
+# Current database schema version. Bumped every time the schema changes.
+# Stored in the DB via ``PRAGMA user_version`` so future releases can detect
+# databases created by older versions and migrate them in order.
+SCHEMA_VERSION = 1
+
+
+def get_schema_version(db_path: Path = DB_PATH) -> int:
+    """Return the schema version stored in the database (0 for fresh DBs)."""
+    conn = sqlite3.connect(str(db_path))
+    try:
+        return int(conn.execute("PRAGMA user_version").fetchone()[0])
+    finally:
+        conn.close()
+
+
+def _apply_migrations(conn: sqlite3.Connection) -> None:
+    """Upgrade an existing database to the current SCHEMA_VERSION.
+
+    Each migration bumps the stored ``user_version`` by one and only runs
+    when the database is older than that step, so upgrades are idempotent
+    and safe to run on every startup.
+    """
+    current = int(conn.execute("PRAGMA user_version").fetchone()[0])
+    if current < SCHEMA_VERSION:
+        # Future schema changes go here, in order, one PRAGMA bump each:
+        #
+        # if current < 2:
+        #     conn.execute("ALTER TABLE races ADD COLUMN track TEXT")
+        #     current += 1
+        #     conn.execute("PRAGMA user_version = 2")
+        pass
+    conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
+
 
 def init_db(db_path: Path = DB_PATH) -> None:
     """Initialize database schema if it doesn't exist.
@@ -105,6 +138,7 @@ def init_db(db_path: Path = DB_PATH) -> None:
     """)
 
     conn.commit()
+    _apply_migrations(conn)
     conn.close()
 
 
