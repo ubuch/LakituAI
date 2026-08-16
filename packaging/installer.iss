@@ -69,7 +69,7 @@ var
   OllamaProgress, OllamaPidFile: String;
   OllamaTimerId: UINT_PTR;
 
-function SetTimer(hWnd: HWND; nIDEvent: UINT_PTR; uElapse: UINT; lpTimerFunc: NativeInt): UINT_PTR;
+function SetTimer(hWnd: HWND; nIDEvent: UINT_PTR; uElapse: UINT; lpTimerFunc: Longint): UINT_PTR;
   external 'SetTimer@user32.dll stdcall';
 
 function KillTimer(hWnd: HWND; uIDEvent: UINT_PTR): BOOL;
@@ -264,7 +264,7 @@ begin
     Result := StrToIntDef(Trim(S), -1);
 end;
 
-procedure OllamaTimerProc(Arg1: HWND; Arg2: UINT; Arg3: UINT_PTR; Arg4: DWORD);
+procedure OllamaTimerProc(Arg1: Longint; Arg2: Longint; Arg3: Longint; Arg4: Longint);
 var
   Pct: Integer;
   Phase: String;

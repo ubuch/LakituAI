@@ -31,7 +31,6 @@ config/current_war.json
 config/players.json
 config/team_tags.json
 config/settings.json
-window_state.json
 
 # Notebooks
 .ipynb_checkpoints/
