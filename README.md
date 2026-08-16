@@ -1,8 +1,14 @@
 # LakituAI
 
-Desktop assistant that keeps score of **Mario Kart World wars** automatically. You just play; the app handles the bookkeeping.
+LakituAI is a desktop app that keeps score of **Mario Kart World wars** automatically while you play or watch a war.
 
 > Looking for the technical details? [Developer info ↓](#for-developers)
+
+## Why did I create LakituAI?
+
+Mario Kart World allows team races with "friendly fire", unlike previous games as far as I know, which is great for competitive MK, but when a player gets disconnected and rejoins, the game forgets their score and resets it to 0, and that makes it hard to follow the scores. Also, if bots are disabled and a player is missing in a race the score gets calculated for 11 players, which makes it even harder to keep track of.
+
+LakituAI is my attempt at solving both these problems, while also tracking the war's progression in more detail.
 
 ---
 
@@ -10,27 +16,28 @@ Desktop assistant that keeps score of **Mario Kart World wars** automatically. Y
 
 ### What does it do?
 
-LakituAI watches your screen while you play. When a race ends and the 12-player scoreboard appears, it detects it on its own, reads the player names, and records:
+LakituAI watches your screen while you play. When a race ends and the scoreboard appears, it detects it on its own, reads the player names, and records:
 
 - **points per player** by position,
 - the **team result** (net) for each race,
 - the **war totals** (players and teams).
 
-No manual typing: the scoreboard is read and saved automatically. If the stream *rewinds* and shows the same race again, the app detects it and does not double-count it.
+No manual inputs: the scoreboard is read and saved automatically. If the stream rewinds and shows the same race again, the app should detect it and not double-count it.
 
-> *add image: LakituAI main window with the sidebar open*
+![LakituAI main window](docs/screenshots/main_window.jpg)
 
 ### Requirements
 
-- **Windows 10** (the OS it's tested on). It should work on **Windows 11**. On Linux, macOS, or WSL it may not work well.
-- For the **chat**: a GPU with **~6 GB of VRAM** is recommended (without a GPU the chat works but slower). The rest of the app works fine with or without a GPU.
-- On first run, the app downloads the OCR model and, if you want to use the chat, the chat model too. This can take a few minutes.
+- **Windows 10** (the OS it's tested on). It should also work on **Windows 11**. It may not work on Linux or macOS.
+- For the **chat**: a GPU with **~6 GB of VRAM** is recommended (without a GPU the chat works but much slower). The rest of the app works fine with or without a GPU.
+- On the first run the app downloads the image reading model and, if you want to use the chat, the chat model too. This can take a few minutes.
 
 ### Installation
 
 1. Open the repository on GitHub. On the right side you'll find the **Releases** section.
 2. Download the **`LakituAI-Setup`** installer.
-3. Run it and follow the steps. The installer:
+3. Extract the `.zip` folder
+4. Run the **Setup** and follow the steps. The installer:
    - installs LakituAI on your PC,
    - if you don't have **Ollama**, installs it and downloads the chat model (so chat works out of the box).
 
@@ -39,52 +46,55 @@ When it's done, open LakituAI from the desktop or Start Menu shortcut.
 ### First steps
 
 1. Open the **Players** tab.
-2. Add the players exactly as they appear in game (with their *team tag* if they belong to a team, e.g. `RK AxeeL` or `ne Bily`).
-3. Go to **Auto Capture** and turn the switch on.
-4. Play. The app handles the rest.
+2. Add the team tags.
+3. Add the players exactly as they appear in game.
+   - For example, if the player is `RK Sliver`, add `RK` as a tag, select the tag, and add the player `Sliver`.
+4. Go to **Auto Capture** and turn the switch on.
+5. Open the stream full-screen mode. The app handles the rest.
 
 ### How it works while you play
 
-- LakituAI watches your **main screen** (monitor 1). The scoreboard must be fully visible; if it's partial or covered, it's ignored and the app waits for the next one.
-- When a complete scoreboard is detected, it's captured, processed, and the image is saved under the **Screenshots** tab.
-- Each war lasts a set number of races (12 by default). When it reaches the limit, the app **starts a new war automatically** (`War 2`, `War 3`, ...).
+- LakituAI watches your **main screen** (monitor 1). Watch the game or stream directly in **full screen**: the scoreboard must be fully visible; a small window, a picture-in-picture, or a covered scoreboard is ignored and the app waits for the next one.
+- When a complete scoreboard is detected, it is captured, processed, and the image is saved in the **Screenshots** tab.
+- Results take a few seconds to appear: processing the scoreboard image takes a moment, so the new race shows up in **Race Summary** shortly after the scoreboard is on screen.
+- Each war lasts a set number of races (12 by default). When it reaches the limit, the app **starts a new war automatically**.
 - You can switch the active war from the **Wars** tab.
+- You can also create a war manually.
 
 ### The window, tab by tab
 
 | Tab | Purpose |
 | --- | --- |
 | **Chat** | Ask questions in plain language about players, races, and wars. |
-| **Race Summary** | Per-race detail: team result, per-player points, and where the standings stood at that point. |
+| **Race Summary** | Per-race detail: team result, per-player points, and where the standings stood at that point. New races take a few seconds to show up. |
 | **Wars** | War list, final results, create/delete wars, and pick the current war. |
 | **Players** | Add, edit, or remove players and team tags. |
 | **Screenshots** | Browse and delete the captures made by the auto mode. |
 | **Auto Capture** | Turn the screen detector on or off. |
 
-> *add image: Players tab with the player list and team tags*
+![Players tab](docs/screenshots/players_tab.jpg)
 
-> *add image: Auto Capture tab with the switch on*
+![Auto Capture tab](docs/screenshots/auto_capture_tab.jpg)
 
-> *add image: Race Summary tab with a race breakdown and cumulative standings*
+![Race Summary tab](docs/screenshots/race_summary.jpg)
 
-> *add image: Wars tab with the war list and final results*
+![Wars tab](docs/screenshots/wars_tab.jpg)
 
-> *add image: Screenshots tab with the auto-captures*
+![Screenshots tab](docs/screenshots/screenshots_tab.jpg)
 
 ### The chat
 
-In the **Chat** tab you can ask questions in English (or Spanish) and the app answers with real war data. A few examples:
+In the **Chat** tab you can ask questions in any language (only tested in English and Spanish) and the app answers with real war data. A few examples:
 
 - "How many points does RK have?"
 - "Who won race 3 of War 1?"
-- "How many races has ne played?"
 - "Show me the final result of the last war"
 
 The chat runs on **Ollama**, which the installer sets up for you. If chat is unavailable (e.g. Ollama isn't running or the model hasn't been downloaded), the tab tells you what's missing.
 
-**Install the chat model manually** (e.g. if the installer couldn't):
+**Install the chat model manually** (if the installer failed):
 
-1. Download and install Ollama from <https://ollama.com/download>.
+1. If Ollama didn't get downloaded, download and install it from <https://ollama.com/download>.
 2. Open a terminal (PowerShell) and run:
    ```bash
    ollama pull qwen3:4b
@@ -92,14 +102,7 @@ The chat runs on **Ollama**, which the installer sets up for you. If chat is una
 3. Wait for the download to finish (~2.5 GB).
 4. Restart LakituAI — the Chat tab will work.
 
-> *add image: Chat tab with a question and its answer*
-
-### Tips and common questions
-
-- **The scoreboard isn't detected?** Make sure it's fully visible on the main screen and **Auto Capture** is on.
-- **Extra races saved?** If the stream replayed a scoreboard, the app ignores it. If something slipped through, you can delete the capture from **Screenshots** and the race from **Wars**.
-- **Weird scores?** Points by position are 15, 12, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1. If a bot (character) occupies a spot, its points go to the missing player on that team, so the team total stays consistent.
-- **Your war isn't 12 races?** That's set in a config file (it's an advanced setting; if you need to change it, ask).
+![Chat tab](docs/screenshots/chat_tab.jpg)
 
 ---
 
@@ -109,7 +112,8 @@ The chat runs on **Ollama**, which the installer sets up for you. If chat is una
 
 ```bash
 python -m venv .venv
-source .venv/bin/activate          # Windows: .venv\Scripts\activate
+source .venv/bin/activate
+# Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 python -m lakituai --gui
 ```

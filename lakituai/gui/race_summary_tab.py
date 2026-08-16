@@ -138,7 +138,8 @@ class RaceSummaryTab(customtkinter.CTkFrame):
             self._add_message(
                 self.detail_panel["scroll"],
                 "No races saved for this war yet.\n\n"
-                "Process a screenshot from the CLI to add races.",
+                "Races appear here a few seconds after a scoreboard "
+                "screenshot is processed.",
             )
             self._add_message(self.standings_panel["scroll"], "(no standings yet)")
 

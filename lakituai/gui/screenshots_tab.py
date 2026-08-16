@@ -90,6 +90,7 @@ class ScreenshotsTab(customtkinter.CTkFrame):
         self._pil: Image.Image | None = None
         self._last_viewer_size: tuple[int, int] | None = None
         self._rows: list[customtkinter.CTkFrame] = []
+        self._empty_label: customtkinter.CTkLabel | None = None
         self._last_snapshot: list[tuple[str, int]] | None = None
         self._build()
         self.refresh()
@@ -170,11 +171,15 @@ class ScreenshotsTab(customtkinter.CTkFrame):
         for row in self._rows:
             row.destroy()
         self._rows = []
+        if self._empty_label is not None:
+            self._empty_label.destroy()
+            self._empty_label = None
 
         if not self._items:
-            customtkinter.CTkLabel(
+            self._empty_label = customtkinter.CTkLabel(
                 self.rail, text="No screenshots yet.", text_color="gray"
-            ).pack(padx=6, pady=10)
+            )
+            self._empty_label.pack(padx=6, pady=10)
             return
 
         for path in self._items:
