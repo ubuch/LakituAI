@@ -69,6 +69,23 @@ def _clamp_window_pos(x, y, left, top, right, bottom):
     return x, y
 
 
+def _rect_contains(rect, px, py):
+    """True when the point (px, py) lies inside the closed rect (l, t, r, b)."""
+    left, top, right, bottom = rect
+    return left <= px <= right and top <= py <= bottom
+
+
+def _single_monitor_rect(rects, px, py):
+    """Return the rect containing (px, py) when it lies on exactly one monitor.
+
+    Rect containment uses closed intervals, so a point on the border shared
+    by two monitors is contained by both and therefore rejected (None). This
+    keeps a stale saved position from pinning the window between two screens.
+    """
+    matches = [r for r in rects if _rect_contains(r, px, py)]
+    return matches[0] if len(matches) == 1 else None
+
+
 class NavButton(customtkinter.CTkFrame):
     """Clickable sidebar item: icon + smaller text label.
 
@@ -332,6 +349,13 @@ class App(customtkinter.CTk):
         self.update_idletasks()
         left, top, right, bottom = self._virtual_desktop_bounds()
         x, y = _clamp_window_pos(*pos, left, top, right, bottom)
+        center = (x + self.winfo_width() // 2, y + self.winfo_height() // 2)
+        if self._single_monitor_containing(*center) is None:
+            # Stale saved position: the monitor it referenced is gone, the
+            # screen shrank, or the window was previously pinned between two
+            # monitors. Drop it and center on the focused monitor instead.
+            self._center_window()
+            return
         self.geometry(f"+{x}+{y}")
 
     def _virtual_desktop_bounds(self):
@@ -396,6 +420,58 @@ class App(customtkinter.CTk):
             except Exception:
                 pass
         return self._virtual_desktop_bounds()
+
+    def _single_monitor_containing(self, px, py):
+        """Return the bounds of the monitor containing (px, py), or None.
+
+        Like ``_monitor_bounds`` it uses real per-monitor geometry on Windows,
+        but a point on the seam between two monitors (or off-screen) counts as
+        invalid, so a stale saved position is never restored onto a boundary.
+        """
+        if sys.platform == "win32":
+            try:
+                import ctypes
+                from ctypes import wintypes
+
+                class _RECT(ctypes.Structure):
+                    _fields_ = [
+                        ("left", ctypes.c_long),
+                        ("top", ctypes.c_long),
+                        ("right", ctypes.c_long),
+                        ("bottom", ctypes.c_long),
+                    ]
+
+                rects = []
+
+                def _collect(_hmon, _hdc, lprc, _lparam):
+                    rects.append(
+                        (
+                            lprc.contents.left,
+                            lprc.contents.top,
+                            lprc.contents.right,
+                            lprc.contents.bottom,
+                        )
+                    )
+                    return 1  # continue enumerating
+
+                _EnumProc = ctypes.WINFUNCTYPE(
+                    ctypes.c_int,
+                    ctypes.c_void_p,
+                    ctypes.c_void_p,
+                    ctypes.POINTER(_RECT),
+                    ctypes.c_double,
+                )
+                enum_proc = _EnumProc(_collect)
+                if ctypes.windll.user32.EnumDisplayMonitors(
+                    None, None, enum_proc, 0
+                ):
+                    return _single_monitor_rect(rects, px, py)
+            except Exception:
+                pass
+        else:
+            left, top, right, bottom = self._virtual_desktop_bounds()
+            return _single_monitor_rect([(left, top, right, bottom)], px, py)
+        return None
 
     def _center_window(self):
         """Center the window on the monitor that currently has the cursor."""

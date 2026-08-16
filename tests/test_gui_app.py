@@ -82,6 +82,38 @@ class ClampTests(unittest.TestCase):
         self.assertEqual(y, 300)
 
 
+class SingleMonitorTests(unittest.TestCase):
+    """A position is only restorable when it lies on exactly one monitor."""
+
+    RECTS = [(0, 0, 1920, 1080), (1920, 0, 3840, 1080)]
+
+    def test_interior_point_on_single_monitor(self):
+        self.assertEqual(
+            app_mod._single_monitor_rect(self.RECTS, 100, 100),
+            (0, 0, 1920, 1080),
+        )
+
+    def test_seam_between_side_by_side_monitors_rejected(self):
+        # The classic "opened between two monitors" stale position: the point
+        # is on the shared border and must not be treated as a valid restore.
+        self.assertIsNone(app_mod._single_monitor_rect(self.RECTS, 1920, 540))
+
+    def test_seam_between_stacked_monitors_rejected(self):
+        rects = [(0, 0, 1920, 1080), (0, 1080, 1920, 2160)]
+        self.assertIsNone(app_mod._single_monitor_rect(rects, 960, 1080))
+
+    def test_off_screen_point_rejected(self):
+        self.assertIsNone(app_mod._single_monitor_rect(self.RECTS, 4000, 500))
+        self.assertIsNone(app_mod._single_monitor_rect(self.RECTS, -100, 500))
+
+    def test_negative_coordinate_monitor(self):
+        rects = [(-1920, 0, 0, 1080), (0, 0, 1920, 1080)]
+        self.assertEqual(
+            app_mod._single_monitor_rect(rects, -500, 500),
+            (-1920, 0, 0, 1080),
+        )
+
+
 class WindowStatePathTests(unittest.TestCase):
     """The state file lives in the per-user data directory."""
 

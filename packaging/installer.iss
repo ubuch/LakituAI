@@ -44,6 +44,9 @@ Source: "..\dist\LakituAI\*"; DestDir: "{app}"; Flags: recursesubdirs createalls
 ; the [Run] step below can execute it (no `dontcopy`, which needs a manual
 ; ExtractTemporaryFile call).
 Source: "installer\install_ollama.ps1"; DestDir: "{tmp}"
+; Helper script to fully remove Ollama. Must live in {app} so the uninstaller
+; can run it before Inno deletes the app directory.
+Source: "installer\uninstall_ollama.ps1"; DestDir: "{app}"
 
 [Icons]
 Name: "{autoprograms}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"
@@ -59,6 +62,7 @@ var
   DetectedVramMb: Integer;
   UninstallDataCheckbox: TNewCheckBox;
   UninstallModelCheckbox: TNewCheckBox;
+  UninstallOllamaCheckbox: TNewCheckBox;
   OllamaProgressPage: TOutputProgressWizardPage;
   OllamaRunning: Boolean;
   OllamaLog, OllamaDone, OllamaErr: String;
@@ -237,7 +241,7 @@ begin
   if UninstallSilent then
     Exit;
 
-  Form := CreateCustomForm(ScaleX(440), ScaleY(260), False, False);
+  Form := CreateCustomForm(ScaleX(440), ScaleY(310), False, False);
   Form.Caption := 'Remove LakituAI data';
   Form.CenterOnShow := True;
 
@@ -266,6 +270,14 @@ begin
   UninstallModelCheckbox.Caption := 'Remove the qwen3:4b chat model from Ollama';
   UninstallModelCheckbox.Checked := True;
 
+  UninstallOllamaCheckbox := TNewCheckBox.Create(Form);
+  UninstallOllamaCheckbox.Parent := Form;
+  UninstallOllamaCheckbox.Left := ScaleX(20);
+  UninstallOllamaCheckbox.Top := ScaleY(144);
+  UninstallOllamaCheckbox.Width := ScaleX(400);
+  UninstallOllamaCheckbox.Caption := 'Remove Ollama completely (program, service and models)';
+  UninstallOllamaCheckbox.Checked := True;
+
   CancelButton := TNewButton.Create(Form);
   CancelButton.Parent := Form;
   CancelButton.Caption := 'Cancel';
@@ -292,14 +304,26 @@ procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
 var
   ResultCode: Integer;
 begin
+  if CurUninstallStep = usUninstall then
+  begin
+    // Fully remove Ollama (program, service, data, models) when requested.
+    // Runs here, before Inno deletes {app}, so the bundled script exists.
+    if UninstallSilent or ((UninstallOllamaCheckbox <> nil) and UninstallOllamaCheckbox.Checked) then
+      Exec('powershell.exe',
+        '-NoProfile -ExecutionPolicy Bypass -File "' + ExpandConstant('{app}\uninstall_ollama.ps1') + '"',
+        '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+  end;
+
   if CurUninstallStep = usPostUninstall then
   begin
     // Silent uninstall removes everything; interactive honors the checkbox state.
     if UninstallSilent or ((UninstallDataCheckbox <> nil) and UninstallDataCheckbox.Checked) then
       DelTree(ExpandConstant('{userappdata}\LakituAI'), True, True, True);
 
-    // Remove the qwen3:4b chat model if requested (silent = always).
-    if UninstallSilent or ((UninstallModelCheckbox <> nil) and UninstallModelCheckbox.Checked) then
+    // Remove the qwen3:4b chat model unless Ollama itself was removed above
+    // (which already deletes all models).
+    if (not (UninstallSilent or ((UninstallOllamaCheckbox <> nil) and UninstallOllamaCheckbox.Checked)))
+       and (UninstallSilent or ((UninstallModelCheckbox <> nil) and UninstallModelCheckbox.Checked)) then
       Exec('ollama', 'rm qwen3:4b', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
   end;
 end;
