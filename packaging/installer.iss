@@ -66,6 +66,8 @@ var
   OllamaProgressPage: TOutputProgressWizardPage;
   OllamaRunning: Boolean;
   OllamaLog, OllamaDone, OllamaErr: String;
+  OllamaProgress, OllamaPidFile: String;
+  OllamaTimerId: LongWord;
 
 function QueryVideoControllerVramMb(): Integer;
 var
@@ -171,7 +173,9 @@ begin
   OllamaCheckbox.Checked := ((DetectedVramMb = 0) or (DetectedVramMb >= 6 * 1024)) and not IsOllamaInstalled();
 
   // Progress page shown while Ollama + the chat model are being set up.
-  OllamaProgressPage := CreateOutputMarqueeProgressPage('Installing Ollama',
+  // Real percentage (not a marquee): the background script writes the overall
+  // progress to a temp file that a timer polls while Exec waits.
+  OllamaProgressPage := CreateOutputProgressPage('Installing Ollama',
     'Setting up Ollama and the qwen3:4b chat model. This may take several minutes.');
 end;
 
@@ -186,18 +190,26 @@ begin
       OllamaLog := ExpandConstant('{tmp}\ollama_setup.log');
       OllamaDone := ExpandConstant('{tmp}\ollama_done.ok');
       OllamaErr := ExpandConstant('{tmp}\ollama_error.err');
+      OllamaProgress := ExpandConstant('{tmp}\ollama_progress.txt');
+      OllamaPidFile := ExpandConstant('{tmp}\ollama_pid.txt');
 
       OllamaRunning := True;
+      OllamaProgressPage.SetProgress(0, 100);
+      OllamaProgressPage.StatusLabel.Caption := 'Starting...';
       OllamaProgressPage.Show;
 
-      // Run synchronously (ewWaitUntilTerminated). Inno pumps messages during the
-      // wait, so the progress bar animates and Cancel works; the page is hidden
-      // as soon as the install finishes and the wizard proceeds.
+      // Poll the script's progress file while it runs. Exec with
+      // ewWaitUntilTerminated pumps messages, so the timer below keeps firing
+      // even though this code is blocked on the PowerShell process.
+      OllamaTimerId := SetTimer(WizardForm.Handle, 1, 500, Longint(@OllamaTimerProc));
+
       Exec('powershell.exe',
         '-NoProfile -ExecutionPolicy Bypass -File "' + ExpandConstant('{tmp}\install_ollama.ps1') +
-        '" "' + OllamaLog + '" "' + OllamaDone + '" "' + OllamaErr + '"',
+        '" "' + OllamaLog + '" "' + OllamaDone + '" "' + OllamaErr + '" "' +
+        OllamaProgress + '" "' + OllamaPidFile + '"',
         '', SW_HIDE, ewWaitUntilTerminated, Res);
 
+      KillTimer(WizardForm.Handle, OllamaTimerId);
       OllamaRunning := False;
       OllamaProgressPage.Hide;
 
@@ -209,15 +221,75 @@ begin
   end;
 end;
 
+function ReadOllamaProgress(const FileName: String; var Pct: Integer; var Phase: String): Boolean;
+var
+  Lines: TStringList;
+  I: Integer;
+  Line: String;
+begin
+  Result := False;
+  Pct := -1;
+  Phase := '';
+  if not FileExists(FileName) then
+    Exit;
+  Lines := TStringList.Create;
+  try
+    Lines.LoadFromFile(FileName);
+    for I := 0 to Lines.Count - 1 do
+    begin
+      Line := Trim(Lines[I]);
+      if Pos('PCT|', Line) = 1 then
+        Pct := StrToIntDef(Copy(Line, 5, MaxInt), -1)
+      else if Pos('PHASE|', Line) = 1 then
+        Phase := Copy(Line, 7, MaxInt);
+    end;
+    Result := Pct >= 0;
+  finally
+    Lines.Free;
+  end;
+end;
+
+function ReadOllamaPid(const FileName: String): Integer;
+var
+  S: String;
+begin
+  Result := -1;
+  if FileExists(FileName) and LoadStringFromFile(FileName, S) then
+    Result := StrToIntDef(Trim(S), -1);
+end;
+
+procedure OllamaTimerProc(Wnd: Longint; Msg: Longint; TimerId: Longint; Time: Longint);
+var
+  Pct: Integer;
+  Phase: String;
+begin
+  try
+    if ReadOllamaProgress(OllamaProgress, Pct, Phase) then
+    begin
+      OllamaProgressPage.SetProgress(Pct, 100);
+      if Phase <> '' then
+        OllamaProgressPage.StatusLabel.Caption := Phase;
+    end;
+  except
+  end;
+end;
+
 procedure CancelButtonClick(CurPageID: Integer; var Cancel, Confirm: Boolean);
 var
   Res: Integer;
+  Pid: Integer;
 begin
   if OllamaRunning then
   begin
-    // Stop the download and remove any partially pulled model.
+    // Kill the PowerShell process driving the download first (it wrote its
+    // PID to a temp file at startup), then Ollama itself, then roll back.
+    // Killing only ollama.exe did not help because the slow part is the
+    // PowerShell process downloading the installer / streaming the model.
+    Pid := ReadOllamaPid(OllamaPidFile);
+    if Pid > 0 then
+      Exec('taskkill', '/pid ' + IntToStr(Pid) + ' /f /t', '', SW_HIDE, ewWaitUntilTerminated, Res);
     Exec('taskkill', '/f /im ollama.exe', '', SW_HIDE, ewWaitUntilTerminated, Res);
-    Exec('ollama', 'rm qwen3:4b', '', SW_HIDE, ewWaitUntilTerminated, Res);
+    Exec('taskkill', '/f /im "ollama app.exe"', '', SW_HIDE, ewWaitUntilTerminated, Res);
     OllamaRunning := False;
     OllamaProgressPage.Hide;
     // Roll back the application installation.
