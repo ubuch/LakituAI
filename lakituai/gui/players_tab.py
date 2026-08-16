@@ -14,6 +14,40 @@ from lakituai import config, player_management
 from lakituai.chat import tools
 
 
+def fix_dialog_to_window(dialog, master):
+    """Anchor ``dialog`` to the main window: transient, modal, centered.
+
+    Tk dialogs otherwise open wherever the OS puts them, which can be off to
+    the side or hidden behind the main window. Making the dialog transient to
+    the app window and grabbing input keeps it on top and centered over it.
+
+    Ordering matters here: the grab is what actually makes the window manager
+    map the dialog at the requested position, and ``focus_set`` must not be
+    called until the dialog is already mapped (it leaves the dialog stuck at
+    Tk's "not yet placed" position on some window managers). The position is
+    re-asserted once more shortly after mapping so window managers that race
+    on the initial map still end up with the dialog centered on the window.
+    """
+    parent = master.winfo_toplevel()
+    dialog.transient(parent)
+    dialog.update_idletasks()
+    x = parent.winfo_rootx() + (parent.winfo_width() - dialog.winfo_width()) // 2
+    y = parent.winfo_rooty() + (parent.winfo_height() - dialog.winfo_height()) // 2
+    x = max(0, min(x, dialog.winfo_screenwidth() - dialog.winfo_width()))
+    y = max(0, min(y, dialog.winfo_screenheight() - dialog.winfo_height()))
+    dialog.geometry(f"+{x}+{y}")
+    dialog.lift()
+    dialog.grab_set()
+
+    def _reassert_position():
+        dialog.geometry(f"+{x}+{y}")
+        dialog.lift()
+
+    # Destroying the dialog cancels its pending ``after`` callbacks, so this
+    # is safe even if the user closes it before the timer fires.
+    dialog.after(30, _reassert_position)
+
+
 class PlayersTab(customtkinter.CTkFrame):
     """Roster management: list, add, edit and remove players and team tags."""
 
@@ -267,8 +301,7 @@ class PlayersTab(customtkinter.CTkFrame):
             self._set_status(msg, error=True)
 
     def _open_edit(self, player):
-        dialog = EditPlayerDialog(self, player, self.team_tags)
-        dialog.grab_set()
+        EditPlayerDialog(self, player, self.team_tags)
 
     def _on_edit_saved(self, old_name, new_name):
         msg = tools.edit_player(old_name, new_name)
@@ -279,13 +312,12 @@ class PlayersTab(customtkinter.CTkFrame):
             self._set_status(msg, error=True)
 
     def _confirm_delete(self, player):
-        dialog = ConfirmDialog(
+        ConfirmDialog(
             self,
             title="Delete player",
             message=f"Remove '{player}' from the roster?",
             on_confirm=lambda: self._remove_player(player),
         )
-        dialog.grab_set()
 
     def _remove_player(self, player):
         success, msg = player_management.remove_player(player)
@@ -309,13 +341,12 @@ class PlayersTab(customtkinter.CTkFrame):
         self.refresh()
 
     def _confirm_remove_tag(self, tag):
-        dialog = ConfirmDialog(
+        ConfirmDialog(
             self,
             title="Remove tag",
             message=f"Remove team tag '{tag}'? Players using it will keep their names.",
             on_confirm=lambda: self._remove_tag(tag),
         )
-        dialog.grab_set()
 
     def _remove_tag(self, tag):
         from lakituai.chat.tools import remove_team_tag
@@ -387,6 +418,8 @@ class EditPlayerDialog(customtkinter.CTkToplevel):
             buttons, text="Save", width=80, command=self._save
         ).pack(side="right", padx=4)
 
+        fix_dialog_to_window(self, master)
+
     def _save(self):
         base = self.name_entry.get().strip()
         tag = self.tag_menu.get()
@@ -434,6 +467,8 @@ class ConfirmDialog(customtkinter.CTkToplevel):
             hover_color="#8b1a1a",
             command=lambda: self._confirmed(on_confirm),
         ).pack(side="right", padx=4)
+
+        fix_dialog_to_window(self, master)
 
     def _confirmed(self, on_confirm):
         self.destroy()

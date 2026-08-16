@@ -13,6 +13,8 @@ yet, a Unicode symbol is used as fallback (chosen from DejaVu Sans so
 they render reliably on Linux).
 """
 
+import json
+
 import customtkinter
 from PIL import Image
 
@@ -22,13 +24,47 @@ from lakituai.gui.players_tab import PlayersTab
 from lakituai.gui.race_summary_tab import RaceSummaryTab
 from lakituai.gui.screenshots_tab import ScreenshotsTab
 from lakituai.gui.wars_tab import WarsTab
-from lakituai.runtime_paths import assets_dir
+from lakituai.runtime_paths import assets_dir, user_data_dir
 
 ASSETS_DIR = assets_dir()
 
 # Icon and button sizing (shared by NavButton and App).
 ICON_IMAGE_SIZE = 36
 BUTTON_HEIGHT = 54
+
+# Where the last window position is remembered between sessions.
+WINDOW_STATE_PATH = user_data_dir() / "window_state.json"
+
+
+def _load_window_pos():
+    """Return the saved (x, y) window position, or None if unavailable."""
+    try:
+        with open(WINDOW_STATE_PATH, encoding="utf-8") as f:
+            data = json.load(f)
+        return int(data["x"]), int(data["y"])
+    except Exception:
+        return None
+
+
+def _save_window_pos(x, y):
+    """Persist the window position so the next launch restores it."""
+    try:
+        WINDOW_STATE_PATH.parent.mkdir(parents=True, exist_ok=True)
+        WINDOW_STATE_PATH.write_text(json.dumps({"x": int(x), "y": int(y)}))
+    except Exception:
+        pass
+
+
+def _clamp_window_pos(x, y, screen_w, screen_h):
+    """Keep the saved position reachable on the current screen.
+
+    Guards against the saved position referring to a monitor that is no
+    longer connected (or a smaller screen), while leaving the title bar
+    visible so the window can always be moved again.
+    """
+    x = max(0, min(x, max(0, screen_w - 120)))
+    y = max(0, min(y, max(0, screen_h - 60)))
+    return x, y
 
 
 class NavButton(customtkinter.CTkFrame):
@@ -149,12 +185,14 @@ class App(customtkinter.CTk):
         self._current_tab = 0
 
         self.pages = {}
+        self.tab_widgets = {}
         self.tab_buttons = {}
 
         self._build_main_layout()
         self._build_sidebar()
         self._build_pages()
 
+        self._apply_initial_geometry()
         self._select_tab(0)
 
     def _set_window_icon(self):
@@ -244,13 +282,20 @@ class App(customtkinter.CTk):
         except ImportError:
             self.chat_session = None
 
-        # Each tab lives in its own module; build them here in order.
-        ChatTab(self.pages["Chat"], self.chat_session).pack(fill="both", expand=True)
-        RaceSummaryTab(self.pages["Race Summary"]).pack(fill="both", expand=True)
-        WarsTab(self.pages["Wars"]).pack(fill="both", expand=True)
-        PlayersTab(self.pages["Players"]).pack(fill="both", expand=True)
-        ScreenshotsTab(self.pages["Screenshots"]).pack(fill="both", expand=True)
-        DaemonTab(self.pages["Auto Capture"]).pack(fill="both", expand=True)
+        # Each tab lives in its own module; build them here in order. The real
+        # widget (not the wrapper page frame) is stored so the sidebar can call
+        # its ``refresh()`` when the user switches to that tab.
+        widgets = {
+            "Chat": ChatTab(self.pages["Chat"], self.chat_session),
+            "Race Summary": RaceSummaryTab(self.pages["Race Summary"]),
+            "Wars": WarsTab(self.pages["Wars"]),
+            "Players": PlayersTab(self.pages["Players"]),
+            "Screenshots": ScreenshotsTab(self.pages["Screenshots"]),
+            "Auto Capture": DaemonTab(self.pages["Auto Capture"]),
+        }
+        for name, widget in widgets.items():
+            widget.pack(fill="both", expand=True)
+            self.tab_widgets[name] = widget
 
     def _toggle_sidebar(self):
         """Expand or collapse the sidebar, showing/hiding tab names."""
@@ -262,7 +307,11 @@ class App(customtkinter.CTk):
             name.show_text(self._sidebar_expanded)
 
     def _on_close(self):
-        """Stop the background watcher (if any) and close the window."""
+        """Remember the window position, stop the watcher, and close."""
+        try:
+            _save_window_pos(self.winfo_x(), self.winfo_y())
+        except Exception:
+            pass
         try:
             from lakituai import daemon as daemon_module
 
@@ -270,6 +319,24 @@ class App(customtkinter.CTk):
         except Exception:
             pass
         self.destroy()
+
+    def _apply_initial_geometry(self):
+        """Open centered on first run; otherwise restore the saved position."""
+        pos = _load_window_pos()
+        if pos is None:
+            self._center_window()
+            return
+
+        self.update_idletasks()
+        x, y = _clamp_window_pos(*pos, self.winfo_screenwidth(), self.winfo_screenheight())
+        self.geometry(f"+{x}+{y}")
+
+    def _center_window(self):
+        """Center the window on the current screen."""
+        self.update_idletasks()
+        x = max(0, (self.winfo_screenwidth() - self.winfo_width()) // 2)
+        y = max(0, (self.winfo_screenheight() - self.winfo_height()) // 2)
+        self.geometry(f"+{x}+{y}")
 
     def _select_tab(self, index):
         """Show the selected page and highlight its sidebar button."""
@@ -283,8 +350,8 @@ class App(customtkinter.CTk):
                 page.pack_forget()
 
         # Pages may want to refresh their contents when shown (screenshot
-        # list, daemon status, standings).
-        refresh = getattr(self.pages[name], "refresh", None)
+        # list, daemon status, standings). Chat has no refresh by design.
+        refresh = getattr(self.tab_widgets.get(name), "refresh", None)
         if callable(refresh):
             try:
                 refresh()

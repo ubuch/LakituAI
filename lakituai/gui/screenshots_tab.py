@@ -15,6 +15,7 @@ import customtkinter
 from PIL import Image
 
 from lakituai import logic
+from lakituai.gui.players_tab import ConfirmDialog
 
 THUMB_HEIGHT = 84
 THUMB_COL_WIDTH = 210
@@ -291,6 +292,14 @@ class ScreenshotsTab(customtkinter.CTkFrame):
     # ------------------------------------------------------------------
 
     def _delete(self, path: Path):
+        ConfirmDialog(
+            self,
+            title="Delete screenshot",
+            message=f"Delete this screenshot?\n{Path(path).name}",
+            on_confirm=lambda: self._delete_now(path),
+        )
+
+    def _delete_now(self, path: Path):
         try:
             Path(path).unlink()
         except OSError:
