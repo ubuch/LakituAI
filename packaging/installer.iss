@@ -185,6 +185,8 @@ begin
     'Setting up Ollama and the qwen3:4b chat model. This may take several minutes.');
 end;
 
+procedure OllamaTimerProc(Arg1: Longint; Arg2: Longint; Arg3: Longint; Arg4: Longint); forward;
+
 procedure CurStepChanged(CurStep: TSetupStep);
 var
   Res: Integer;
