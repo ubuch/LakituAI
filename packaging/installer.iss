@@ -259,11 +259,19 @@ end;
 
 function ReadOllamaPid(const FileName: String): Integer;
 var
-  S: String;
+  Lines: TStringList;
 begin
   Result := -1;
-  if FileExists(FileName) and LoadStringFromFile(FileName, S) then
-    Result := StrToIntDef(Trim(S), -1);
+  if not FileExists(FileName) then
+    Exit;
+  Lines := TStringList.Create;
+  try
+    Lines.LoadFromFile(FileName);
+    if Lines.Count > 0 then
+      Result := StrToIntDef(Trim(Lines[0]), -1);
+  finally
+    Lines.Free;
+  end;
 end;
 
 procedure OllamaTimerProc(Arg1: Longint; Arg2: Longint; Arg3: Longint; Arg4: Longint);
