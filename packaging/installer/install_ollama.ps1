@@ -76,8 +76,16 @@ function Install-Ollama {
     $setupPath = Join-Path $env:TEMP 'OllamaSetup.exe'
     Download-File -Url 'https://ollama.com/download/OllamaSetup.exe' -Path $setupPath
     Write-ProgressState -Pct 30 -Phase 'Installing Ollama...'
-    $proc = Start-Process -FilePath $setupPath -ArgumentList '/VERYSILENT', '/NORESTART' -Wait -PassThru
-    if ($proc.ExitCode -ne 0) {
+    $proc = Start-Process -FilePath $setupPath -ArgumentList '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART' -PassThru
+    # The setup app can leave its window open after a successful install.
+    # Wait with a generous timeout and only fail if Ollama is not actually
+    # present afterwards, so a stuck window never hangs the installer forever.
+    if (-not $proc.WaitForExit(10 * 60 * 1000)) {
+        $proc.Kill()
+        if (-not (Test-Ollama)) {
+            throw 'Ollama installer did not finish within 10 minutes.'
+        }
+    } elseif ($proc.ExitCode -ne 0) {
         throw "Ollama installer failed with exit code $($proc.ExitCode)"
     }
     # Make ollama available in this session's PATH.
@@ -85,7 +93,8 @@ function Install-Ollama {
 }
 
 function Wait-OllamaServer {
-    for ($i = 0; $i -lt 30; $i++) {
+    # First start can be slow (model registry init); give it up to ~3 minutes.
+    for ($i = 0; $i -lt 60; $i++) {
         try {
             $r = Invoke-WebRequest -Uri 'http://127.0.0.1:11434/api/version' -UseBasicParsing -TimeoutSec 2
             if ($r.StatusCode -eq 200) {
@@ -156,17 +165,13 @@ function Pull-ModelViaApi {
 }
 
 function Pull-Model {
-    Write-ProgressState -Pct 40 -Phase 'Starting the chat model download...'
+    Write-ProgressState -Pct 40 -Phase 'Starting the Ollama server...'
     if (-not (Wait-OllamaServer)) {
+        # The installer normally auto-starts the tray app; if the server is not
+        # up yet, start it explicitly before pulling the model.
         Start-Process -FilePath 'ollama' -ArgumentList 'serve' -WindowStyle Hidden
         if (-not (Wait-OllamaServer)) {
-            # Fallback: plain CLI pull (no live percentage).
-            & ollama pull $model 2>&1 | Tee-Object -FilePath $LogFile -Append
-            if ($LASTEXITCODE -ne 0) {
-                throw "Failed to pull model $model"
-            }
-            Write-ProgressState -Pct 100 -Phase 'Done.'
-            return
+            throw 'The Ollama server did not start, so the chat model could not be downloaded.'
         }
     }
     Pull-ModelViaApi

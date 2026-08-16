@@ -32,19 +32,13 @@ ASSETS_DIR = assets_dir()
 ICON_IMAGE_SIZE = 36
 BUTTON_HEIGHT = 54
 
+# Default window size (also used for centering before the window is mapped).
+DEFAULT_WINDOW_SIZE = (1100, 700)
 
-def _centered_position(monitor, w, h):
-    """Return (x, y) so the center of a w×h window matches the monitor center.
 
-    The window is clamped so it never hangs off the monitor's edges; when the
-    window is larger than the monitor it pins to the monitor's top-left corner.
-    """
-    left, top, right, bottom = monitor
-    cx = (left + right) // 2
-    cy = (top + bottom) // 2
-    x = max(left, min(cx - w // 2, right - w))
-    y = max(top, min(cy - h // 2, bottom - h))
-    return x, y
+def _center_on_screen(screen_w, screen_h, win_w, win_h):
+    """Return (x, y) so a win_w×win_h window is centered on the screen."""
+    return max(0, (screen_w - win_w) // 2), max(0, (screen_h - win_h) // 2)
 
 
 class NavButton(customtkinter.CTkFrame):
@@ -153,7 +147,7 @@ class App(customtkinter.CTk):
         super().__init__()
 
         self.title("LakituAI")
-        self.geometry("1100x700")
+        self.geometry(f"{DEFAULT_WINDOW_SIZE[0]}x{DEFAULT_WINDOW_SIZE[1]}")
         self.minsize(700, 480)
         self._set_window_icon()
 
@@ -176,7 +170,19 @@ class App(customtkinter.CTk):
         self._select_tab(0)
 
     def _set_window_icon(self):
-        """Set the app logo as the window icon (title bar + taskbar)."""
+        """Set the app logo as the window icon (title bar + taskbar).
+
+        Windows renders the multi-resolution ``logo.ico`` correctly, so it is
+        preferred there; other platforms fall back to a PNG via ``iconphoto``.
+        """
+        if sys.platform == "win32":
+            ico_path = ASSETS_DIR / "logo.ico"
+            if ico_path.exists():
+                try:
+                    self.iconbitmap(str(ico_path))
+                    return
+                except Exception:
+                    pass
         logo_path = ASSETS_DIR / "logo.png"
         if not logo_path.exists():
             return
@@ -299,81 +305,15 @@ class App(customtkinter.CTk):
             pass
         self.destroy()
 
-    def _virtual_desktop_bounds(self):
-        """Return (left, top, right, bottom) covering all monitors.
-
-        ``winfo_screenwidth/height`` only describe the total size, which is
-        useless when a monitor sits at negative coordinates. Windows exposes
-        the full virtual desktop bounds via the Win32 API.
-        """
-        if sys.platform == "win32":
-            try:
-                import ctypes
-
-                get = ctypes.windll.user32.GetSystemMetrics
-                # SM_XVIRTUALSCREEN, SM_YVIRTUALSCREEN,
-                # SM_CXVIRTUALSCREEN, SM_CYVIRTUALSCREEN
-                x, y = get(76), get(77)
-                return x, y, x + get(78), y + get(79)
-            except Exception:
-                pass
-        return 0, 0, self.winfo_screenwidth(), self.winfo_screenheight()
-
-    def _monitor_bounds(self):
-        """Return (left, top, right, bottom) of the monitor under the cursor.
-
-        The cursor marks the monitor that has focus. On Windows we query the
-        real per-monitor geometry with the Win32 API; elsewhere we fall back
-        to the whole virtual desktop (the cursor then picks which half of the
-        screen the window lands on).
-        """
-        if sys.platform == "win32":
-            try:
-                import ctypes
-                from ctypes import wintypes
-
-                class _RECT(ctypes.Structure):
-                    _fields_ = [
-                        ("left", ctypes.c_long),
-                        ("top", ctypes.c_long),
-                        ("right", ctypes.c_long),
-                        ("bottom", ctypes.c_long),
-                    ]
-
-                class _MONITORINFO(ctypes.Structure):
-                    _fields_ = [
-                        ("cbSize", ctypes.c_ulong),
-                        ("rcMonitor", _RECT),
-                        ("rcWork", _RECT),
-                        ("dwFlags", ctypes.c_ulong),
-                    ]
-
-                point = wintypes.POINT()
-                ctypes.windll.user32.GetCursorPos(ctypes.byref(point))
-                monitor = ctypes.windll.user32.MonitorFromPoint(point, 2)  # nearest
-                info = _MONITORINFO()
-                info.cbSize = ctypes.sizeof(_MONITORINFO)
-                if monitor and ctypes.windll.user32.GetMonitorInfoW(
-                    monitor, ctypes.byref(info)
-                ):
-                    rect = info.rcMonitor
-                    return rect.left, rect.top, rect.right, rect.bottom
-            except Exception:
-                pass
-        return self._virtual_desktop_bounds()
-
     def _center_window(self):
-        """Center the window on the monitor that currently has the cursor."""
-        self.update_idletasks()
-        w = self.winfo_width()
-        h = self.winfo_height()
-        if w < 2 or h < 2:
-            # Before the window is mapped, winfo_width/height can report 1px
-            # instead of the real size; fall back to the requested layout size
-            # so the window still lands exactly centered.
-            w = self.winfo_reqwidth()
-            h = self.winfo_reqheight()
-        x, y = _centered_position(self._monitor_bounds(), w, h)
+        """Center the window on the screen before it is shown.
+
+        Uses the primary screen reported by Tk (on Windows that is the primary
+        monitor, not the combined desktop), sized with the default window size
+        because the native window is not mapped yet.
+        """
+        w, h = DEFAULT_WINDOW_SIZE
+        x, y = _center_on_screen(self.winfo_screenwidth(), self.winfo_screenheight(), w, h)
         self.geometry(f"+{x}+{y}")
 
     def _select_tab(self, index):

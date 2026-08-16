@@ -82,6 +82,16 @@ In the **Chat** tab you can ask questions in English (or Spanish) and the app an
 
 The chat runs on **Ollama**, which the installer sets up for you. If chat is unavailable (e.g. Ollama isn't running or the model hasn't been downloaded), the tab tells you what's missing.
 
+**Install the chat model manually** (e.g. if the installer couldn't):
+
+1. Download and install Ollama from <https://ollama.com/download>.
+2. Open a terminal (PowerShell) and run:
+   ```bash
+   ollama pull qwen3:4b
+   ```
+3. Wait for the download to finish (~2.5 GB).
+4. Restart LakituAI — the Chat tab will work.
+
 > *add image: Chat tab with a question and its answer*
 
 ### Tips and common questions
@@ -182,7 +192,7 @@ resources/
 python -m unittest discover -s tests
 ```
 
-236 tests cover the CLI, config, logic (matching/scoring), player management, persistence (incl. schema versioning), war manager, chat tools and GUI.
+228 tests cover the CLI, config, logic (matching/scoring), player management, persistence (incl. schema versioning), war manager, chat tools and GUI.
 
 ### Project structure
 
@@ -218,7 +228,7 @@ packaging/
 ├── installer/install_ollama.ps1
 └── logo.ico
 resources/                   # Runtime data (gitignored)
-tests/                       # unittest suite (236 tests)
+tests/                       # unittest suite (228 tests)
 LakituAI.spec                # PyInstaller spec (Windows onedir)
 requirements.txt             # Runtime dependencies (pinned)
 requirements-build.txt       # Same pins minus torch (CPU wheel installed separately)

@@ -173,7 +173,7 @@ begin
   OllamaCheckbox := TNewCheckBox.Create(OllamaPage);
   OllamaCheckbox.Parent := OllamaPage.Surface;
   OllamaCheckbox.Width := OllamaPage.SurfaceWidth;
-  OllamaCheckbox.Caption := 'Install Ollama (~200 MB) and download the qwen3:4b chat model (~2.5 GB)';
+  OllamaCheckbox.Caption := 'Install Ollama (~1.5 GB) and download the qwen3:4b chat model (~2.5 GB)';
   // Default to installing only when there is enough VRAM (or VRAM is unknown)
   // and Ollama isn't already present.
   OllamaCheckbox.Checked := ((DetectedVramMb = 0) or (DetectedVramMb >= 6 * 1024)) and not IsOllamaInstalled();
@@ -202,6 +202,10 @@ begin
       OllamaPidFile := ExpandConstant('{tmp}\ollama_pid.txt');
 
       OllamaRunning := True;
+      // Inno disables the wizard's Cancel button (and the title-bar close)
+      // during the install steps; re-enable it so the user can abort the
+      // Ollama setup, which is the only long-running part left.
+      WizardForm.CancelButton.Enabled := True;
       OllamaProgressPage.SetProgress(0, 100);
       OllamaProgressPage.SetText('Starting...', '');
       OllamaProgressPage.Show;
