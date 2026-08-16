@@ -13,7 +13,6 @@ yet, a Unicode symbol is used as fallback (chosen from DejaVu Sans so
 they render reliably on Linux).
 """
 
-import json
 import sys
 
 import customtkinter
@@ -25,7 +24,7 @@ from lakituai.gui.players_tab import PlayersTab
 from lakituai.gui.race_summary_tab import RaceSummaryTab
 from lakituai.gui.screenshots_tab import ScreenshotsTab
 from lakituai.gui.wars_tab import WarsTab
-from lakituai.runtime_paths import assets_dir, user_data_dir
+from lakituai.runtime_paths import assets_dir
 
 ASSETS_DIR = assets_dir()
 
@@ -33,57 +32,19 @@ ASSETS_DIR = assets_dir()
 ICON_IMAGE_SIZE = 36
 BUTTON_HEIGHT = 54
 
-# Where the last window position is remembered between sessions.
-WINDOW_STATE_PATH = user_data_dir() / "window_state.json"
 
+def _centered_position(monitor, w, h):
+    """Return (x, y) so the center of a w×h window matches the monitor center.
 
-def _load_window_pos():
-    """Return the saved (x, y) window position, or None if unavailable."""
-    try:
-        with open(WINDOW_STATE_PATH, encoding="utf-8") as f:
-            data = json.load(f)
-        return int(data["x"]), int(data["y"])
-    except Exception:
-        return None
-
-
-def _save_window_pos(x, y):
-    """Persist the window position so the next launch restores it."""
-    try:
-        WINDOW_STATE_PATH.parent.mkdir(parents=True, exist_ok=True)
-        WINDOW_STATE_PATH.write_text(json.dumps({"x": int(x), "y": int(y)}))
-    except Exception:
-        pass
-
-
-def _clamp_window_pos(x, y, left, top, right, bottom):
-    """Keep the saved position reachable on the current desktop.
-
-    Guards against the saved position referring to a monitor that is no
-    longer connected (or a smaller screen), while leaving the title bar
-    visible so the window can always be moved again. Bounds may be negative
-    when a monitor sits to the left of or above the primary screen.
+    The window is clamped so it never hangs off the monitor's edges; when the
+    window is larger than the monitor it pins to the monitor's top-left corner.
     """
-    x = max(left, min(x, max(left, right - 120)))
-    y = max(top, min(y, max(top, bottom - 60)))
+    left, top, right, bottom = monitor
+    cx = (left + right) // 2
+    cy = (top + bottom) // 2
+    x = max(left, min(cx - w // 2, right - w))
+    y = max(top, min(cy - h // 2, bottom - h))
     return x, y
-
-
-def _rect_contains(rect, px, py):
-    """True when the point (px, py) lies inside the closed rect (l, t, r, b)."""
-    left, top, right, bottom = rect
-    return left <= px <= right and top <= py <= bottom
-
-
-def _single_monitor_rect(rects, px, py):
-    """Return the rect containing (px, py) when it lies on exactly one monitor.
-
-    Rect containment uses closed intervals, so a point on the border shared
-    by two monitors is contained by both and therefore rejected (None). This
-    keeps a stale saved position from pinning the window between two screens.
-    """
-    matches = [r for r in rects if _rect_contains(r, px, py)]
-    return matches[0] if len(matches) == 1 else None
 
 
 class NavButton(customtkinter.CTkFrame):
@@ -211,7 +172,7 @@ class App(customtkinter.CTk):
         self._build_sidebar()
         self._build_pages()
 
-        self._apply_initial_geometry()
+        self._center_window()
         self._select_tab(0)
 
     def _set_window_icon(self):
@@ -225,6 +186,9 @@ class App(customtkinter.CTk):
             size = 128
             img = Image.open(logo_path).resize((size, size))
             self._icon_image = ImageTk.PhotoImage(img)
+            # update_idletasks realizes the native window first so Windows
+            # applies the icon to the title bar instead of dropping it.
+            self.update_idletasks()
             self.iconphoto(True, self._icon_image)
         except Exception:
             pass
@@ -326,11 +290,7 @@ class App(customtkinter.CTk):
             name.show_text(self._sidebar_expanded)
 
     def _on_close(self):
-        """Remember the window position, stop the watcher, and close."""
-        try:
-            _save_window_pos(self.winfo_x(), self.winfo_y())
-        except Exception:
-            pass
+        """Stop the watcher and close."""
         try:
             from lakituai import daemon as daemon_module
 
@@ -338,25 +298,6 @@ class App(customtkinter.CTk):
         except Exception:
             pass
         self.destroy()
-
-    def _apply_initial_geometry(self):
-        """Open centered on first run; otherwise restore the saved position."""
-        pos = _load_window_pos()
-        if pos is None:
-            self._center_window()
-            return
-
-        self.update_idletasks()
-        left, top, right, bottom = self._virtual_desktop_bounds()
-        x, y = _clamp_window_pos(*pos, left, top, right, bottom)
-        center = (x + self.winfo_width() // 2, y + self.winfo_height() // 2)
-        if self._single_monitor_containing(*center) is None:
-            # Stale saved position: the monitor it referenced is gone, the
-            # screen shrank, or the window was previously pinned between two
-            # monitors. Drop it and center on the focused monitor instead.
-            self._center_window()
-            return
-        self.geometry(f"+{x}+{y}")
 
     def _virtual_desktop_bounds(self):
         """Return (left, top, right, bottom) covering all monitors.
@@ -421,67 +362,18 @@ class App(customtkinter.CTk):
                 pass
         return self._virtual_desktop_bounds()
 
-    def _single_monitor_containing(self, px, py):
-        """Return the bounds of the monitor containing (px, py), or None.
-
-        Like ``_monitor_bounds`` it uses real per-monitor geometry on Windows,
-        but a point on the seam between two monitors (or off-screen) counts as
-        invalid, so a stale saved position is never restored onto a boundary.
-        """
-        if sys.platform == "win32":
-            try:
-                import ctypes
-                from ctypes import wintypes
-
-                class _RECT(ctypes.Structure):
-                    _fields_ = [
-                        ("left", ctypes.c_long),
-                        ("top", ctypes.c_long),
-                        ("right", ctypes.c_long),
-                        ("bottom", ctypes.c_long),
-                    ]
-
-                rects = []
-
-                def _collect(_hmon, _hdc, lprc, _lparam):
-                    rects.append(
-                        (
-                            lprc.contents.left,
-                            lprc.contents.top,
-                            lprc.contents.right,
-                            lprc.contents.bottom,
-                        )
-                    )
-                    return 1  # continue enumerating
-
-                _EnumProc = ctypes.WINFUNCTYPE(
-                    ctypes.c_int,
-                    ctypes.c_void_p,
-                    ctypes.c_void_p,
-                    ctypes.POINTER(_RECT),
-                    ctypes.c_double,
-                )
-                enum_proc = _EnumProc(_collect)
-                if ctypes.windll.user32.EnumDisplayMonitors(
-                    None, None, enum_proc, 0
-                ):
-                    return _single_monitor_rect(rects, px, py)
-            except Exception:
-                pass
-        else:
-            left, top, right, bottom = self._virtual_desktop_bounds()
-            return _single_monitor_rect([(left, top, right, bottom)], px, py)
-        return None
-
     def _center_window(self):
         """Center the window on the monitor that currently has the cursor."""
         self.update_idletasks()
-        left, top, right, bottom = self._monitor_bounds()
-        w, h = self.winfo_width(), self.winfo_height()
-        cx = (left + right) // 2
-        cy = (top + bottom) // 2
-        x = max(left, min(cx - w // 2, right - w))
-        y = max(top, min(cy - h // 2, bottom - h))
+        w = self.winfo_width()
+        h = self.winfo_height()
+        if w < 2 or h < 2:
+            # Before the window is mapped, winfo_width/height can report 1px
+            # instead of the real size; fall back to the requested layout size
+            # so the window still lands exactly centered.
+            w = self.winfo_reqwidth()
+            h = self.winfo_reqheight()
+        x, y = _centered_position(self._monitor_bounds(), w, h)
         self.geometry(f"+{x}+{y}")
 
     def _select_tab(self, index):

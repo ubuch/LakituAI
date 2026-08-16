@@ -167,7 +167,7 @@ begin
   OllamaCheckbox := TNewCheckBox.Create(OllamaPage);
   OllamaCheckbox.Parent := OllamaPage.Surface;
   OllamaCheckbox.Width := OllamaPage.SurfaceWidth;
-  OllamaCheckbox.Caption := 'Install Ollama and download the qwen3:4b chat model';
+  OllamaCheckbox.Caption := 'Install Ollama (~200 MB) and download the qwen3:4b chat model (~2.5 GB)';
   // Default to installing only when there is enough VRAM (or VRAM is unknown)
   // and Ollama isn't already present.
   OllamaCheckbox.Checked := ((DetectedVramMb = 0) or (DetectedVramMb >= 6 * 1024)) and not IsOllamaInstalled();
