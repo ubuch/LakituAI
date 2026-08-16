@@ -67,7 +67,13 @@ var
   OllamaRunning: Boolean;
   OllamaLog, OllamaDone, OllamaErr: String;
   OllamaProgress, OllamaPidFile: String;
-  OllamaTimerId: LongWord;
+  OllamaTimerId: UINT_PTR;
+
+function SetTimer(hWnd: HWND; nIDEvent: UINT_PTR; uElapse: UINT; lpTimerFunc: NativeInt): UINT_PTR;
+  external 'SetTimer@user32.dll stdcall';
+
+function KillTimer(hWnd: HWND; uIDEvent: UINT_PTR): BOOL;
+  external 'KillTimer@user32.dll stdcall';
 
 function QueryVideoControllerVramMb(): Integer;
 var
@@ -195,13 +201,13 @@ begin
 
       OllamaRunning := True;
       OllamaProgressPage.SetProgress(0, 100);
-      OllamaProgressPage.StatusLabel.Caption := 'Starting...';
+      OllamaProgressPage.SetText('Starting...', '');
       OllamaProgressPage.Show;
 
       // Poll the script's progress file while it runs. Exec with
       // ewWaitUntilTerminated pumps messages, so the timer below keeps firing
       // even though this code is blocked on the PowerShell process.
-      OllamaTimerId := SetTimer(WizardForm.Handle, 1, 500, Longint(@OllamaTimerProc));
+      OllamaTimerId := SetTimer(WizardForm.Handle, 1, 500, CreateCallback(@OllamaTimerProc));
 
       Exec('powershell.exe',
         '-NoProfile -ExecutionPolicy Bypass -File "' + ExpandConstant('{tmp}\install_ollama.ps1') +
@@ -258,7 +264,7 @@ begin
     Result := StrToIntDef(Trim(S), -1);
 end;
 
-procedure OllamaTimerProc(Wnd: Longint; Msg: Longint; TimerId: Longint; Time: Longint);
+procedure OllamaTimerProc(Arg1: HWND; Arg2: UINT; Arg3: UINT_PTR; Arg4: DWORD);
 var
   Pct: Integer;
   Phase: String;
@@ -268,7 +274,7 @@ begin
     begin
       OllamaProgressPage.SetProgress(Pct, 100);
       if Phase <> '' then
-        OllamaProgressPage.StatusLabel.Caption := Phase;
+        OllamaProgressPage.SetText(Phase, '');
     end;
   except
   end;
