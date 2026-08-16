@@ -5,7 +5,6 @@ and providing a simple interface for war management.
 """
 
 import json
-from pathlib import Path
 
 from lakituai import runtime_paths
 
@@ -40,16 +39,3 @@ def set_current_war(name: str) -> None:
     data = {"current_war": name}
     with open(WAR_CONFIG_PATH, "w") as f:
         json.dump(data, f, indent=2)
-
-
-def get_war_display_name(war_id: int, war_name: str) -> str:
-    """Get a nice display name for a war.
-
-    Args:
-        war_id: Database ID of war.
-        war_name: Name of war.
-
-    Returns:
-        Formatted display name (e.g., "#1: War Name").
-    """
-    return f"#{war_id}: {war_name}"

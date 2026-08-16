@@ -12,7 +12,6 @@ write to them. Redirect them to a per-user log file to avoid crashes and keep
 a record of background OCR runs.
 """
 
-import os
 import sys
 
 from lakituai import runtime_paths

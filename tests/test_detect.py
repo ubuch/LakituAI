@@ -6,7 +6,7 @@ import numpy as np
 
 from lakituai import detect
 
-TMP = Path(__file__).resolve().parents[1] / "tmp"
+SAMPLES_DIR = Path(__file__).resolve().parents[1] / "tmp"
 
 
 def blank_frame(height=1080, width=1920, color=(20, 20, 20)):
@@ -39,9 +39,9 @@ def frame_with_panel(bgr=(40, 60, 200), height=1080, width=1920):
 def frame_with_falling_panel(bgr=(40, 60, 200), height=1080, width=1920, fill=0.85):
     """Frame whose panel zone is mostly filled from the top (mid-animation).
 
-    The block already covers most of the zone (as in the real a_medias3
-    sample, which reached ~91%), so the gate fires; the bottom rows have not
-    landed, so the complete-panel check must defer capture.
+    The block already covers most of the zone (~91% in the reference
+    capture), so the gate fires; the bottom rows have not landed, so the
+    complete-panel check must defer capture.
     """
 
     frame = blank_frame(height, width)
@@ -160,10 +160,10 @@ class BandCoverageTests(unittest.TestCase):
 
 
 class RealSamplesTests(unittest.TestCase):
-    """Validate against the real captures in tmp/ (skipped if absent)."""
+    """Validate against real screen captures when the samples are present."""
 
     def _load(self, name):
-        path = TMP / name
+        path = SAMPLES_DIR / name
         if not path.exists():
             self.skipTest(f"missing sample {name}")
         return cv2.imread(str(path))
@@ -176,9 +176,9 @@ class RealSamplesTests(unittest.TestCase):
             self.assertFalse(detect.is_scoreboard(zone), msg=name)
 
     def test_incomplete_scoreboard_samples_are_not_scoreboards(self):
-        # The "a medias" panel is ~91% present (gate passes) but its bottom
-        # rows are missing; the premature capture from the Windows video has
-        # full saturation but no content (no edges). Both must be rejected.
+        # A partially appeared panel is ~91% present (the gate passes) but its
+        # bottom rows are missing; a premature capture has full saturation but
+        # no content (no edges). Both must be rejected.
         for name in ("scoreboard_a_medias3.png", "foto_daemon1.jpg"):
             img = self._load(name)
             zone = detect.crop_zone(img)

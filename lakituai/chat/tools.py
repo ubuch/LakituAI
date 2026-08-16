@@ -4,7 +4,6 @@ Each function is a tool the LLM can call. Type hints and docstrings are used
 by the Ollama library to auto-generate JSON schemas for function calling.
 """
 
-import json
 import sqlite3
 import unicodedata
 from typing import Optional

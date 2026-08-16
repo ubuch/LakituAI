@@ -47,7 +47,7 @@ def parse_arguments() -> argparse.Namespace:
             "  python -m lakituai --chat\n"
             "  python -m lakituai --daemon\n"
             "  python -m lakituai --daemon-stop\n"
-            "  python -m lakituai --feed tmp/img1.png tmp/img2.png"
+            "  python -m lakituai --feed path/to/img1.png path/to/img2.png"
         ),
     )
 
@@ -162,7 +162,6 @@ def parse_arguments() -> argparse.Namespace:
 
     # War selection (only with image_path)
     parser.add_argument(
-        "--war",
         "--war",
         type=str,
         default=None,

@@ -13,20 +13,19 @@ it keeps working on live video where the panel shows subtle animation):
 2. **Is it complete (settled)?**  Two sub-checks, both resolution-independent
    per horizontal band of the zone:
    - ``band_coverage``: every band must be substantially *saturated*.  This
-     rejects a panel still "falling in" whose rows have not arrived (the
-     "a medias" state has empty bottom bands).
+     rejects a panel still falling in, whose rows have not arrived yet (a
+     partially appeared panel has empty bottom bands).
    - ``edge_band_coverage``: every band must have real *content* (edges from
      the player rows / numbers / portraits).  This rejects the mid-appearance
      state where the panel's colored backdrop already covers the whole zone
-     but the rows have not been drawn yet (captured once on the Windows
-     test video: all bands were saturated, but six rows of content were
-     missing).
+     but the rows have not been drawn yet (seen once on the Windows test
+     video: every band was saturated, but the row content was still missing).
 
-Calibration (against real samples in ``tmp/``): a settled scoreboard has
-min-band saturation ~85-91% and min-band edge density ~2.2-3.4 (of 100);
-gameplay peaks at ~39% area; the "a medias" sample drops to ~32% saturation
-and 0 edge density; the premature backdrop capture has full saturation but 0
-edge density.
+The defaults below are derived from real captures: a settled scoreboard
+measures ~85-91% minimum band saturation and ~2.2-3.4 minimum edge density
+(out of 100); gameplay peaks at ~39% covered area; a partially appeared
+panel drops to ~32% saturation with no content, and a premature backdrop
+capture has full saturation but no edges.
 """
 
 from __future__ import annotations
@@ -132,7 +131,7 @@ def band_coverage(zone_bgr: np.ndarray, bands: int = BAND_COUNT) -> np.ndarray:
 
     Splits the zone into ``bands`` horizontal strips and reports how much of
     each strip is saturated.  A fully-appeared scoreboard scores high in every
-    band; a panel that is still falling in (or stuck "a medias") has empty
+    band; a panel that is still falling in (or stuck half-appeared) has empty
     strips where the rows have not arrived yet.
     """
 

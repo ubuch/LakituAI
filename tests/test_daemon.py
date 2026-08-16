@@ -1,5 +1,9 @@
+import os
+import signal
+import subprocess
 import sys
 import tempfile
+import threading
 import time
 import unittest
 from pathlib import Path
@@ -170,7 +174,7 @@ class LockTests(unittest.TestCase):
     def test_acquire_overwrites_stale_pid(self):
         self.pid_path.write_text("999999999")
         self.assertTrue(daemon.acquire_lock(self.pid_path))
-        self.assertEqual(self.pid_path.read_text().strip(), str(__import__("os").getpid()))
+        self.assertEqual(self.pid_path.read_text().strip(), str(os.getpid()))
 
 
 class DaemonEntryTests(unittest.TestCase):
@@ -190,10 +194,6 @@ class DaemonEntryTests(unittest.TestCase):
     def test_run_daemon_main_runs_until_signal(self):
         # A timer sends SIGINT shortly after startup; the daemon's own handler
         # must catch it and exit cleanly, releasing the lock.
-        import os
-        import signal
-        import threading
-
         settings = daemon.DaemonSettings(
             pid_path=self.pid_path,
             log_path=self.log_path,
@@ -221,10 +221,6 @@ class DaemonEntryTests(unittest.TestCase):
         self.assertFalse(self.pid_path.exists())
 
     def test_stop_daemon_signals_live_process(self):
-        import os
-        import signal
-        import subprocess
-
         # Spawn a child that writes its own pid file and waits; stopping it
         # should signal it and (cleanly or not) end it.
         child = subprocess.Popen(

@@ -1,6 +1,6 @@
 """Core image processing, matching, scoring, and standings logic for LakituAI."""
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 
 import cv2
@@ -50,15 +50,6 @@ class ScoreboardRowResult:
     match_source: str
     is_bot: bool = False
     is_missing_player: bool = False
-
-
-@dataclass
-class WarStandings:
-    """Accumulated points across one or more races."""
-
-    player_points: dict[str, int] = field(default_factory=dict)
-    team_points: dict[str, int] = field(default_factory=dict)
-    races_played: int = 0
 
 
 def _get_image(path):
@@ -157,19 +148,6 @@ def extract_team_tag(player_name, team_tags=TEAM_TAGS):
             return team_tag
 
     return None
-
-
-def validate_player_tags(players=PLAYERS, team_tags=TEAM_TAGS):
-    """Ensure every configured player has a recognizable team tag."""
-
-    players_without_team = [
-        player for player in players if extract_team_tag(player, team_tags) is None
-    ]
-    if players_without_team:
-        raise ValueError(
-            "Players without team tag at the start or end: "
-            + ", ".join(players_without_team)
-        )
 
 
 def is_bot_name(normalized_name, bot_names=BOT_NAMES):
@@ -443,28 +421,3 @@ def build_race_fingerprint(scoreboard_rows) -> str:
         if row.points_recipient:
             entries.append(f"{row.row_number}|{row.points_recipient}")
     return ";".join(entries)
-
-
-def add_race_to_standings(
-    scoreboard_rows,
-    standings=None,
-    players=PLAYERS,
-    team_tags=TEAM_TAGS,
-):
-    """Add one race result to cumulative war standings."""
-
-    validate_player_tags(players, team_tags)
-
-    if standings is None:
-        standings = WarStandings()
-
-    for player, points in build_player_points(scoreboard_rows).items():
-        standings.player_points[player] = (
-            standings.player_points.get(player, 0) + points
-        )
-
-    for team, points in build_team_points(scoreboard_rows, team_tags).items():
-        standings.team_points[team] = standings.team_points.get(team, 0) + points
-
-    standings.races_played += 1
-    return standings

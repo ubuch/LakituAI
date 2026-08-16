@@ -1,21 +1,20 @@
 """Background daemon: watches the screen and auto-processes scoreboards.
 
-Design (Option B): a *lightweight* watcher that only captures the screen,
-detects a fully-appeared scoreboard, saves a screenshot and then spawns the
-existing CLI as a short-lived subprocess to run OCR. The heavy model
-(torch/TrOCR) only lives inside that subprocess, so the daemon itself stays
-at a few hundred MB of RAM.
+A *lightweight* watcher that only captures the screen, detects a
+fully-appeared scoreboard, saves a screenshot and then spawns the existing
+CLI as a short-lived subprocess to run OCR. The heavy model (torch/TrOCR)
+only lives inside that subprocess, so the daemon itself stays at a few
+hundred MB of RAM.
 
 Detection reuses ``lakituai.detect``: the panel is a large contiguous
-saturated block (gate) that must also be *complete* (every horizontal band
-saturated). Both checks run on a single frame, so the daemon captures the
-very first frame on which the scoreboard is fully down -- it does not need
-the screen to be motionless, which matters on live video where the panel
-keeps animating.
+saturated block (gate) that must also be *complete* -- every horizontal band
+saturated AND with content (edges). Both checks run on a single frame, so
+the daemon captures the very first frame on which the scoreboard is fully
+down; it does not need the screen to be motionless, which matters on live
+video where the panel keeps animating.
 
 The capture and dispatch steps are injected as callables so the class is
-fully testable without a screen or a real subprocess (and to support a
-future ``--feed`` mode that replays static images).
+fully testable without a screen or a real subprocess.
 """
 
 from __future__ import annotations
@@ -28,7 +27,7 @@ import subprocess
 import sys
 import threading
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Optional
 
@@ -44,7 +43,8 @@ DISPATCH_TIMEOUT_S = 600.0
 
 @dataclass
 class DaemonSettings:
-    """Tunable daemon parameters (overridden from config in a later step)."""
+    """Tunable daemon parameters; defaults come from ``config/settings.json``
+    via ``settings_from_config``."""
 
     monitor: int = 1
     poll_interval_s: float = 0.5

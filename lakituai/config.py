@@ -330,18 +330,4 @@ def extract_team_tag_from_game_config(
     """
     from lakituai import logic
 
-    normalized_player = logic.normalize_text(player_name)
-    sorted_tags = sorted(
-        config_obj.team_tags,
-        key=lambda tag: len(logic.normalize_text(tag)),
-        reverse=True,
-    )
-
-    for team_tag in sorted_tags:
-        normalized_tag = logic.normalize_text(team_tag)
-        if normalized_player.startswith(normalized_tag):
-            return team_tag
-        if normalized_player.endswith(normalized_tag):
-            return team_tag
-
-    return None
+    return logic.extract_team_tag(player_name, config_obj.team_tags)

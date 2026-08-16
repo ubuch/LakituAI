@@ -462,8 +462,9 @@ def get_races_played(
 ) -> int:
     """Get total number of races played in a war.
 
-    Uses the races_played count from any player (all players should have same count).
-    Falls back to counting rows in races table if available.
+    Counts rows in the races table; if it is empty, falls back to the
+    races_played counter stored in player standings (all players should
+    have the same count).
 
     Args:
         war_id: ID of the war.

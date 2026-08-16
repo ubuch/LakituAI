@@ -79,10 +79,6 @@ class LogicTests(unittest.TestCase):
             logic.build_race_fingerprint(rows), "1|RK Alpha;2|ne.COOK"
         )
 
-    def test_validate_player_tags_rejects_players_without_team_tags(self):
-        with self.assertRaises(ValueError):
-            logic.validate_player_tags(["RK AxeeL", "NoTeam"], ("RK", "ne"))
-
     def test_bot_detection_matches_playable_character_names(self):
         self.assertTrue(logic.is_bot_name(logic.normalize_text("Cow")))
         self.assertTrue(logic.is_bot_name(logic.normalize_text("Toad")))
@@ -133,25 +129,32 @@ class LogicTests(unittest.TestCase):
         self.assertEqual(bot_row.points, 12)
         self.assertEqual(bot_row.points_recipient, "β-Ray")
 
-    def test_player_and_team_points_are_accumulated_across_races(self):
+    def test_player_and_team_points_accumulate_across_races(self):
         players = ["RK Alpha", "β-Ray", "ne.COOK"]
         team_tags = ("RK", "β", "ne")
-        race_1 = logic.build_scoreboard_results(
-            [(1, "RK Alpha"), (2, "β-Ray"), (3, "ne.COOK")],
-            players,
-        )
-        race_2 = logic.build_scoreboard_results(
-            [(1, "β-Ray"), (2, "Cow"), (3, "RK Alpha")],
-            players,
-        )
+        races = [
+            logic.build_scoreboard_results(
+                [(1, "RK Alpha"), (2, "β-Ray"), (3, "ne.COOK")],
+                players,
+            ),
+            logic.build_scoreboard_results(
+                [(1, "β-Ray"), (2, "Cow"), (3, "RK Alpha")],
+                players,
+            ),
+        ]
 
-        standings = logic.add_race_to_standings(
-            race_1, players=players, team_tags=team_tags
-        )
-        logic.add_race_to_standings(race_2, standings, players, team_tags)
+        total_player_points = {}
+        total_team_points = {}
+        for race in races:
+            for player, points in logic.build_player_points(race).items():
+                total_player_points[player] = (
+                    total_player_points.get(player, 0) + points
+                )
+            for team, points in logic.build_team_points(race, team_tags).items():
+                total_team_points[team] = total_team_points.get(team, 0) + points
 
         self.assertEqual(
-            standings.player_points,
+            total_player_points,
             {
                 "RK Alpha": 25,
                 "β-Ray": 27,
@@ -159,14 +162,13 @@ class LogicTests(unittest.TestCase):
             },
         )
         self.assertEqual(
-            standings.team_points,
+            total_team_points,
             {
                 "RK": 25,
                 "β": 27,
                 "ne": 22,
             },
         )
-        self.assertEqual(standings.races_played, 2)
 
 
 class ConfigTests(unittest.TestCase):
